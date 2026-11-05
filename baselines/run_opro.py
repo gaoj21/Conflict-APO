@@ -54,7 +54,9 @@ def evaluate_single_instruction(data, instruction, eval_index_all, **kw):
     SCORES[instruction] = float(v)
     out = pd.DataFrame(dict(raw_answer=df.reason, true_answer=[data[i]["target"] for i in idx]), index=idx)
     out["accuracy"] = max(float(v), 0.0)
-    print(f"  score {v:.3f}  ins: {instruction[:100]!r}", flush=True)
+    n = len(SCORES)  # step 0 scores the initial instruction; each later step scores 8 new ones
+    print(f"  [step ~{max(n - 2, 0) // 8 + (n > 1)}/{a.steps}, instruction #{n}] score {v:.3f}  ins: {instruction[:100]!r}",
+          flush=True)
     return out
 
 

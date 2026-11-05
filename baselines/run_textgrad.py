@@ -98,7 +98,7 @@ def optimize(attrs, tag, idx=0):
         role_descriptions=["item to rate", "human expert ratings", "LLM judge response"], engine=loss_engine)
     cur_mae = mae(system_prompt.value, val, attrs)
     hist = [dict(step=0, val_mae=cur_mae, kept=True, prompt=system_prompt.value)]
-    print(f"[{tag}] step 0 val MAE {cur_mae:.3f}", flush=True)
+    print(f"[{tag}] step 0/{a.steps} val MAE {cur_mae:.3f}", flush=True)
     for step in range(1, a.steps + 1):
         batch = rng.sample(train, a.batch)
         optimizer.zero_grad()
@@ -119,7 +119,7 @@ def optimize(attrs, tag, idx=0):
         else:
             system_prompt.set_value(prev)
         hist.append(dict(step=step, val_mae=new_mae, kept=kept, prompt=system_prompt.value))
-        print(f"[{tag}] step {step} val MAE {new_mae:.3f} {'keep' if kept else 'revert'}", flush=True)
+        print(f"[{tag}] step {step}/{a.steps} val MAE {new_mae:.3f} {'keep' if kept else 'revert'}", flush=True)
     json.dump(hist, open(f"{OUTD}/hist_{tag}.json", "w"), indent=1)
     return system_prompt.value
 
@@ -128,12 +128,14 @@ if a.mode == "ccc":
     final = optimize(ds.A, "all")
     open(f"{OUTD}/final_prompt.txt", "w").write(final)
     for s in ("fit", "sel", "test"):
+        print(f"final evaluation: {s} ({len(ds.rows[s])} items)", flush=True)
         common.save_scores(ds, METHOD, a.seed, s, judge(final, ds.rows[s]))
 else:
     with ThreadPoolExecutor(len(ds.A)) as ex:  # the per-attribute runs are independent: run them side by side
         finals = dict(zip(ds.A, ex.map(lambda kx: optimize([kx[1]], kx[1], kx[0]), enumerate(ds.A))))
     json.dump(finals, open(f"{OUTD}/final_prompts.json", "w"), indent=1)
     for s in ("fit", "sel", "test"):  # one call per attribute: attribute k is read from prompt k
+        print(f"final evaluation: {s} ({len(ds.rows[s])} items x {len(ds.A)} attribute prompts)", flush=True)
         cols = {x: judge(finals[x], ds.rows[s]).set_index("id")[x] for x in ds.A}
         common.save_scores(ds, METHOD, a.seed, s, pd.DataFrame(cols).reset_index().rename(columns={"index": "id"}))
 common.save_usage(OUTD)

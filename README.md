@@ -99,7 +99,11 @@ nohup python baselines/run_all.py --ds hs2,hanna,ell,merlin --seeds 0,1,2 --par 
   dspy_gepa（3 个 seed）。每个数据集 2 + 6×3 = 20 个任务，共 80 个。
 - `--par` 是同时运行的任务数。每个任务内部 judge 的并发由 `llm` 控制（`client.MAX_PARALLEL`）。`--workers` 只用于
   DSPy 的线程数。被限流时调小 `--par`。
-- 每个任务的日志在 `results/gpt/logs/<ds>_<method>_<seed>.log`。
+- **进度**：调度器启动、完成或失败一个任务时，各打印一行。另外每隔 `--every` 秒（默认 60）打印一次总进度
+  （完成 / 运行 / 排队 / 失败）以及每个运行中任务的已运行时间和日志最后一行，例如 OPRO 的
+  `[step ~3/12, instruction #22] score ...`、TextGrad 的 `step 5/12 val MAE ...`、最终评测的
+  `judged 352 items in 40s, 100% parsed`。后台运行时用 `tail -f run_all.log` 查看。
+- 每个任务的完整日志在 `results/gpt/logs/<ds>_<method>_<seed>.log`。
 - **断点续跑**：直接重跑同一条命令，已完成的任务（三个 `scores_*.csv` 都在）和正在运行的任务会被跳过。
 - **停止**：`touch results/gpt/STOP` 之后不再启动新任务，正在跑的任务会继续跑完。要立即停止，就 kill 对应进程。
 - 只跑一部分时，用 `--methods opro,textgrad_ccc` 和 `--ds hs2` 过滤。

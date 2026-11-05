@@ -9,7 +9,7 @@ Every method (v0, few-shot, OPRO, TextGrad CCC / Single-Task, DSPy zero-shot / M
 seed, the judge's scores on fit / sel / test to results/<WGC_RUN>/<ds>/<method>/seed<s>/scores_<split>.csv (WGC_RUN
 defaults to "gpt"); evaluate.py then reports raw and readout test Spearman for all of them in the same way.
 """
-import json, os, re, sys, threading
+import json, os, re, sys, threading, time
 
 import numpy as np, pandas as pd
 
@@ -111,6 +111,7 @@ class DS:
         """Judge rows (make(row) -> messages) with one batch_result call. strict: stop if >20% of outputs are unparsed
         (outage / refusal). Optimizers scoring candidate prompts pass strict=False: a candidate that breaks the output
         format just scores badly (see worst_case). `workers` is unused (the llm package bounds the parallelism)."""
+        t0 = time.time()
         try:
             texts, err = chat_batch([make(r) for r in rows]), None
         except ProviderError as e:  # the whole batch failed
@@ -126,6 +127,8 @@ class DS:
             if a not in df:
                 df[a] = np.nan
         bad = df[self.A].isna().any(axis=1).mean()
+        print(f"  [{time.strftime('%H:%M:%S')}] judged {len(rows)} items in {time.time() - t0:.0f}s, "
+              f"{1 - bad:.0%} parsed" + (f" (batch failed: {err})" if err else ""), flush=True)
         if strict and bad > 0.2:  # outage / refusal / moderation: stop rather than optimize on garbage
             raise Abort(f"{self.name}: {bad:.0%} of {len(df)} judge calls unparsed, e.g. "
                         f"{df['reason'].astype(str).iloc[0][:200] if len(df) else ''}")
@@ -165,6 +168,7 @@ def have_scores(ds, method, seed):
 def judge_all_splits(ds, method, seed, instruction, workers=16):
     """Final evaluation of a single-instruction judge: score fit, sel and test, save the scores and the prompt."""
     for s in ("fit", "sel", "test"):
+        print(f"final evaluation: {s} ({len(ds.rows[s])} items)", flush=True)
         save_scores(ds, method, seed, s, ds.judge(instruction, ds.rows[s], workers))
     open(f"{ds.out(method, seed)}/final_prompt.txt", "w").write(instruction)
     save_usage(ds.out(method, seed))

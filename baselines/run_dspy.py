@@ -102,6 +102,7 @@ def run(r):
 
 
 for s in ("fit", "sel", "test"):
+    print(f"final evaluation: {s} ({len(ds.rows[s])} items)", flush=True)
     with ThreadPoolExecutor(a.workers) as ex:
         df = pd.DataFrame(list(ex.map(run, ds.rows[s])))
     for x in ds.A:
