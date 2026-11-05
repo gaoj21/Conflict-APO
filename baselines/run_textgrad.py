@@ -129,14 +129,17 @@ if a.mode == "ccc":
     open(f"{OUTD}/final_prompt.txt", "w").write(final)
     for s in ("fit", "sel", "test"):
         print(f"final evaluation: {s} ({len(ds.rows[s])} items)", flush=True)
-        common.save_scores(ds, METHOD, a.seed, s, judge(final, ds.rows[s]))
+        df = judge(final, ds.rows[s], strict=False)  # a final prompt that breaks the format scores what it scores
+        print(f"  parsed: {df[ds.A].notna().all(axis=1).mean():.0%}", flush=True)
+        common.save_scores(ds, METHOD, a.seed, s, df)
 else:
     with ThreadPoolExecutor(len(ds.A)) as ex:  # the per-attribute runs are independent: run them side by side
         finals = dict(zip(ds.A, ex.map(lambda kx: optimize([kx[1]], kx[1], kx[0]), enumerate(ds.A))))
     json.dump(finals, open(f"{OUTD}/final_prompts.json", "w"), indent=1)
     for s in ("fit", "sel", "test"):  # one call per attribute: attribute k is read from prompt k
         print(f"final evaluation: {s} ({len(ds.rows[s])} items x {len(ds.A)} attribute prompts)", flush=True)
-        cols = {x: judge(finals[x], ds.rows[s]).set_index("id")[x] for x in ds.A}
+        cols = {x: judge(finals[x], ds.rows[s], strict=False).set_index("id")[x] for x in ds.A}
+        print("  parsed per attribute: " + ", ".join(f"{x} {cols[x].notna().mean():.0%}" for x in ds.A), flush=True)
         common.save_scores(ds, METHOD, a.seed, s, pd.DataFrame(cols).reset_index().rename(columns={"index": "id"}))
 common.save_usage(OUTD)
 print(a.ds, METHOD, a.seed, "done")
