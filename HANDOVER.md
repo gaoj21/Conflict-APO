@@ -74,7 +74,7 @@ codex login                                              # ChatGPT 账号登录�
 "codex": {
   "adapter": "codex",
   "codex_config": {"model_reasoning_effort": "none"},
-  "params": {"timeout": 300}
+  "params": {"timeout": 900}
 }
 ```
 
