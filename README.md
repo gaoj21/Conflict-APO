@@ -26,7 +26,7 @@ Conflict-APO/
 │       ├── gold.csv      人工分数：id, 各属性, z（= log 长度，readout 用）
 │       └── fit.jsonl  sel.jsonl  test.jsonl   每行 {"id", "user"}，user 是 judge 要打分的文本
 ├── baselines/
-│   ├── gem.py            公共 harness：调用 llm、缓存、token / 花费日志、数据集类、打分解析
+│   ├── gem.py            公共 harness：调用 llm、数据集类、打分解析
 │   ├── smoke.py          整条链路的冒烟测试（几次真实调用）
 │   ├── run_simple.py     v0, fewshot
 │   ├── run_opro.py       OPRO（third_party 里的官方代码）
@@ -35,7 +35,7 @@ Conflict-APO/
 │   ├── run_all.py        调度器：跑完整张表，可断点续跑
 │   └── evaluate.py       汇总：raw / isotonic / own_len / readout
 ├── third_party/opro-main/   OPRO 官方代码（未改动）
-└── results/<run>/           输出（自动创建；<run> 默认是 llm 默认 provider 的名字）
+└── results/gpt/           输出（自动创建）
 ```
 
 | 名称 | 数据集 | 属性 | 分数范围 | fit / sel / test |
@@ -56,29 +56,17 @@ cp -r /path/to/your/llm ./llm                     # 或 ln -s；再把 llm 需�
 
 ## 2. 和 `llm` 的接口
 
-本代码只用 `llm` 的公开 API：
+所有模型调用只有一处，在 `baselines/gem.py` 里：
 
-- 单次调用用 `chat_result(None, messages, temperature=...)`；最终评测在 `WGC_BATCH=1` 时用 `batch_result(None, items, temperature=0)`。
-- 读取 `LLMResult.content` 和 `LLMResult.usage`。
-- 每次调用的花费由 `UsageTracker` 计算，价格用你在 llm 里配好的。
-- 默认的结果目录名取自 `default_provider()`。
+```python
+from llm import chat_result
+chat_result(None, messages, temperature=t).content
+```
 
-第一个参数始终是 `None`，也就是你配置的默认 provider。要换 provider，就改 `providers.json` 的 `default`，或设置 `LLM_PROVIDER`。
+模型、provider、参数、token 消耗和价格都由你的 `llm` 包负责。`temperature` 是唯一传进去的参数：judge 用 0，
+各优化器用官方温度（TextGrad 的 loss / gradient / optimizer 分别是 0.3 / 0.3 / 0.7，OPRO 和 DSPy 的 optimizer 是 1.0）。
 
-只传 `temperature`：judge 用 0，各优化器用官方温度（TextGrad 的 loss / gradient / optimizer 分别是 0.3 / 0.3 / 0.7，
-OPRO 和 DSPy 的 optimizer 是 1.0）。其余参数全部按 llm 的配置。temperature 0 的调用会被缓存，重跑不花钱。
-
-可选环境变量（都有默认值，一般不用设）：
-
-| 变量 | 作用 | 默认 |
-|---|---|---|
-| `WGC_RUN` | 结果目录 `results/<WGC_RUN>/`，换模型时用来区分 | llm 默认 provider 的名字 |
-| `WGC_BUDGET` | 整个 run 的花费（按 `UsageTracker` 计）超过这个美元数，就停止所有任务 | 300 |
-| `WGC_BATCH` | `1` = 最终评测（fit/sel/test 全量打分）走 `batch_result`，provider 有原生 batch 时更便宜 | 0 |
-| `WGC_MAX_FAIL` | 所有线程合计连续失败这么多次，就停止所有任务 | 30 |
-
-**安全停止**：遇到认证、封禁、额度类错误（401/402/403、`token_disabled`、quota 等）、缺少环境变量，或连续失败太多次，
-当前任务会立刻 `Abort`，之后不再发出任何调用。被中止的任务没有结果文件，修好后重跑 `run_all.py` 就会续上。
+结果写在 `results/gpt/`。换模型时设 `WGC_RUN=<名字>` 写到别的目录，避免覆盖。
 
 ## 3. 冒烟测试（必做，约 4 次真实调用）
 
@@ -89,13 +77,13 @@ python baselines/smoke.py hanna      # 整条链路：llm → judge → 分数�
 ```
 
 如果出现 `CHECK`，说明 judge 的输出没有以 JSON 结尾（例如 max_tokens 太小、输出被截断），先检查 llm 的配置。
+如果某个任务里超过 20% 的 judge 输出解析失败（API 出错、被拒答等），这个任务会直接停止，不会在坏数据上继续优化；修好后重跑即可续上。
 
 ## 4. 先跑小规模 pilot（建议）
 
 ```bash
 python baselines/run_all.py --ds hanna --methods v0,dspy_zeroshot,fewshot --seeds 0 --par 3 --workers 16
 python baselines/evaluate.py hanna
-python -c "import sys; sys.path.insert(0,'baselines'); import gem; print(gem.spent())"   # ($, 调用数, 输入 token, 输出 token)
 ```
 
 ## 5. 跑完整主表（4 数据集 × 7 方法 × 3 seeds）
@@ -108,10 +96,9 @@ nohup python baselines/run_all.py --ds hs2,hanna,ell,merlin --seeds 0,1,2 --par 
   dspy_gepa（3 个 seed）。每个数据集 2 + 6×3 = 20 个任务，共 80 个。
 - `--par` 是同时运行的任务数。`--workers` 是每个任务内部的并发调用数，总并发约为 par × workers。请按 provider 的
   rate limit 调整，被限流时调小。
-- 每个任务的日志在 `results/<run>/logs/<ds>_<method>_<seed>.log`。
-- **断点续跑**：直接重跑同一条命令。已完成的任务（三个 `scores_*.csv` 都在）和正在运行的任务会被跳过。
-  temperature 0 的 judge 调用有缓存（`results/<run>/cache.sqlite`），重跑不会重复花钱。
-- **停止**：`touch results/<run>/STOP` 之后不再启动新任务，正在跑的任务会继续跑完。要立即停止，就 kill 对应进程。
+- 每个任务的日志在 `results/gpt/logs/<ds>_<method>_<seed>.log`。
+- **断点续跑**：直接重跑同一条命令，已完成的任务（三个 `scores_*.csv` 都在）和正在运行的任务会被跳过。
+- **停止**：`touch results/gpt/STOP` 之后不再启动新任务，正在跑的任务会继续跑完。要立即停止，就 kill 对应进程。
 - 只跑一部分时，用 `--methods opro,textgrad_ccc` 和 `--ds hs2` 过滤。
 
 也可以单独跑某个任务：
@@ -133,7 +120,7 @@ python baselines/run_dspy.py     hanna gepa --seed 0       # auto="light"
 python baselines/evaluate.py                 # 4 个数据集；也可以写 python baselines/evaluate.py hanna hs2
 ```
 
-输出 `results/<run>/results.csv`（每个 run 一行），并打印每个数据集和方法的 3-seed 均值：
+输出 `results/gpt/results.csv`（每个 run 一行），并打印每个数据集和方法的 3-seed 均值：
 
 - `raw`：judge 原始分数的 test Spearman（属性平均）；
 - `readout`：经过我们的 decoder 之后的 test Spearman；
@@ -144,21 +131,14 @@ python baselines/evaluate.py                 # 4 个数据集；也可以写 pyt
 
 ## 7. 开销参考
 
-Gemma 4 26B 跑完整张表（含重跑，偏上限），总量约为：
-
-- 输入约 **8 亿 token**，输出约 **2.3 亿 token**（关闭 reasoning）；
-- 大头是 TextGrad Single-Task（约 40%）和 OPRO（约 20%），其次是 MIPROv2 和 TextGrad CCC；
-- v0、zero-shot 和 few-shot 很便宜。
-
-GPT 的实际消耗取决于 llm 里的模型设置（例如是否开 reasoning）。建议先按第 4 步跑 pilot，用 `gem.spent()` 看实际
-token 和花费，再估算全量开销。如果你的 provider 有原生 batch endpoint，加 `WGC_BATCH=1` 后，最终评测会走
-`llm.batch_result`。
+Gemma 4 26B 跑完整张表（含重跑，偏上限）：输入约 **8 亿 token**，输出约 **2.3 亿 token**（关闭 reasoning）。大头是 TextGrad
+Single-Task（约 40%）和 OPRO（约 20%）；v0、zero-shot 和 few-shot 很便宜。GPT 的实际消耗看 llm 的统计，建议跑完第 4 步的
+pilot 后先看一下。
 
 ## 输出文件
 
 ```
-results/<WGC_RUN>/
-├── cache.sqlite          judge 缓存 + 每次调用的 token / 花费日志（spend 表；未回报 usage 的调用记为 NULL）
+results/gpt/
 ├── logs/                 每个任务的日志
 ├── results.csv           evaluate.py 汇总
 └── <ds>/<method>/seed<s>/
@@ -167,4 +147,4 @@ results/<WGC_RUN>/
     └── 各方法的过程记录（opro/、hist_*.json、gepa_log/ 等）
 ```
 
-把 `results/<WGC_RUN>/` 整个拷回来，就能并入论文的主表。
+把 `results/gpt/` 整个拷回来，就能并入论文的主表。

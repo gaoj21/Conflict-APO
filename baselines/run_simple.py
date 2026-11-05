@@ -14,7 +14,6 @@ ap.add_argument("ds"); ap.add_argument("method"); ap.add_argument("--seed", type
 ap.add_argument("--k", type=int, default=5); ap.add_argument("--workers", type=int, default=16)
 a = ap.parse_args()
 ds = gem.DS(a.ds)
-gem.TAG.v = f"{a.ds}/{a.method}/seed{a.seed}"
 if a.method == "v0":
     instr = ds.v0
 else:
@@ -24,4 +23,4 @@ else:
                         for i, r in enumerate(ex))
     instr = ds.v0 + "\n\n## Examples rated by human experts\n\n" + shots
 gem.judge_all_splits(ds, a.method, a.seed, instr, a.workers)
-print(a.ds, a.method, a.seed, "spent $%.3f" % gem.spent(gem.TAG.v)[0])
+print(a.ds, a.method, a.seed, "done")

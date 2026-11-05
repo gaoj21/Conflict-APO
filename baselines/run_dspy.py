@@ -25,25 +25,22 @@ ap.add_argument("--nval", type=int, default=200); ap.add_argument("--workers", t
 a = ap.parse_args()
 ds = gem.DS(a.ds)
 METHOD = f"dspy_{a.opt}"
-gem.TAG.v = f"{a.ds}/{METHOD}/seed{a.seed}"
 OUTD = ds.out(METHOD, a.seed)
 
 class GemLM(dspy.BaseLM):
-    """DSPy LM routed through gem.chat, i.e. through the llm package (DSPy never sees a provider)."""
+    """DSPy LM routed through the llm package (DSPy never sees a provider)."""
 
     def forward(self, prompt=None, messages=None, **kwargs):
         from types import SimpleNamespace as NS
         kw = {**self.kwargs, **kwargs}
         msgs = messages or [dict(role="user", content=prompt)]
-        txt, it, ot, _ = gem.chat(msgs, model=self.model, temperature=kw.get("temperature", 0.0),
-                                  max_tokens=kw.get("max_tokens", 2000), cache=False)
-        it, ot = it or 0, ot or 0  # DSPy's own counters only; gem's log keeps "no usage reported" as NULL
+        txt = gem.chat(msgs, temperature=kw.get("temperature", 0.0))
         return NS(choices=[NS(message=NS(content=txt), finish_reason="stop")], model=self.model,
-                  usage={"prompt_tokens": it, "completion_tokens": ot, "total_tokens": it + ot})
+                  usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})  # usage: see the llm package
 
 
-lm_judge = GemLM(gem.JUDGE, temperature=0.0, max_tokens=2000, cache=False)
-lm_opt = GemLM(gem.OPTIM, temperature=1.0, max_tokens=8000, cache=False)
+lm_judge = GemLM("llm", temperature=0.0, cache=False)
+lm_opt = GemLM("llm", temperature=1.0, cache=False)
 dspy.configure(lm=lm_judge)
 
 fields = {"item": (str, dspy.InputField(desc="the item to rate"))}
@@ -81,11 +78,6 @@ def metric_fb(gold, pred, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=s, feedback=fb)
 
 
-def record_cost(lm, model):
-    lm.history.clear()  # gem.chat already logged every call with its tokens and cost
-    return 0.0
-
-
 train = [example(r) for r in ds.rows["fit"]]
 val = [example(r) for r in ds.subset("sel", a.nval, seed=a.seed)]
 if a.opt == "mipro":
@@ -98,10 +90,7 @@ elif a.opt == "gepa":
     compiled = tp.compile(program, trainset=train, valset=val)
 else:
     compiled = program
-record_cost(lm_judge, gem.JUDGE); record_cost(lm_opt, gem.OPTIM)
-c_opt = gem.spent(gem.TAG.v)[0]
 compiled.save(f"{OUTD}/program.json")
-print(f"optimization spent ${c_opt:.3f}", flush=True)
 
 
 def run(r):
@@ -122,5 +111,4 @@ for s in ("fit", "sel", "test"):
     if bad > 0.2:
         raise gem.Abort(f"{METHOD} {s}: {bad:.0%} unparsed")
     gem.save_scores(ds, METHOD, a.seed, s, df)
-record_cost(lm_judge, gem.JUDGE)
-print(a.ds, METHOD, a.seed, f"done, spent ${gem.spent(gem.TAG.v)[0]:.3f} (optimization ${c_opt:.3f})")
+print(a.ds, METHOD, a.seed, "done")

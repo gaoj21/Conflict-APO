@@ -31,29 +31,27 @@ ap.add_argument("--nval", type=int, default=100); ap.add_argument("--workers", t
 a = ap.parse_args()
 ds = gem.DS(a.ds)
 METHOD = f"textgrad_{a.mode}"
-gem.TAG.v = f"{a.ds}/{METHOD}/seed{a.seed}"
 OUTD = ds.out(METHOD, a.seed)
 
 
 class LLMEngine(EngineLM):
-    """textgrad engine backed by the llm package through gem.chat (same accounting as every other call)."""
+    """textgrad engine backed by the llm package."""
 
-    def __init__(self, model, temperature, max_tokens=2000):
-        self.model_string, self.temperature, self.max_tokens = model, temperature, max_tokens
+    def __init__(self, temperature):
+        self.model_string, self.temperature = "llm", temperature
 
     def generate(self, prompt, system_prompt=None, **kwargs):
         msgs = ([dict(role="system", content=system_prompt)] if system_prompt else []) + [dict(role="user", content=prompt)]
-        return gem.chat(msgs, model=self.model_string, temperature=self.temperature, max_tokens=self.max_tokens,
-                        cache=self.temperature == 0)[0]
+        return gem.chat(msgs, temperature=self.temperature)
 
     def __call__(self, prompt, **kwargs):
         return self.generate(prompt, **kwargs)
 
 
-judge_engine = LLMEngine(gem.JUDGE, 0.0)
-loss_engine = LLMEngine(gem.OPTIM, 0.3)
-grad_engine = LLMEngine(gem.OPTIM, 0.3)
-opt_engine = LLMEngine(gem.OPTIM, 0.7, max_tokens=4000)
+judge_engine = LLMEngine(0.0)
+loss_engine = LLMEngine(0.3)
+grad_engine = LLMEngine(0.3)
+opt_engine = LLMEngine(0.7)
 tg.set_backward_engine(grad_engine, override=True)
 
 
@@ -61,9 +59,9 @@ def user_msg(text):
     return text.strip() + "\n\n" + ds.FORMAT  # the frozen output format travels with the item
 
 
-def judge(instruction, rows, strict=True, batch=False):
+def judge(instruction, rows, strict=True):
     return ds.judge_msgs(lambda r: [dict(role="system", content=instruction), dict(role="user", content=user_msg(r["user"]))],
-                         rows, a.workers, strict, batch)
+                         rows, a.workers, strict)
 
 
 def mae(instruction, rows, attrs):
@@ -121,8 +119,7 @@ def optimize(attrs, tag, idx=0):
         else:
             system_prompt.set_value(prev)
         hist.append(dict(step=step, val_mae=new_mae, kept=kept, prompt=system_prompt.value))
-        print(f"[{tag}] step {step} val MAE {new_mae:.3f} {'keep' if kept else 'revert'}  "
-              f"spent ${gem.spent(gem.TAG.v)[0]:.2f}", flush=True)
+        print(f"[{tag}] step {step} val MAE {new_mae:.3f} {'keep' if kept else 'revert'}", flush=True)
     json.dump(hist, open(f"{OUTD}/hist_{tag}.json", "w"), indent=1)
     return system_prompt.value
 
@@ -131,12 +128,12 @@ if a.mode == "ccc":
     final = optimize(ds.A, "all")
     open(f"{OUTD}/final_prompt.txt", "w").write(final)
     for s in ("fit", "sel", "test"):
-        gem.save_scores(ds, METHOD, a.seed, s, judge(final, ds.rows[s], batch=gem.USE_BATCH))
+        gem.save_scores(ds, METHOD, a.seed, s, judge(final, ds.rows[s]))
 else:
     with ThreadPoolExecutor(len(ds.A)) as ex:  # the per-attribute runs are independent: run them side by side
         finals = dict(zip(ds.A, ex.map(lambda kx: optimize([kx[1]], kx[1], kx[0]), enumerate(ds.A))))
     json.dump(finals, open(f"{OUTD}/final_prompts.json", "w"), indent=1)
     for s in ("fit", "sel", "test"):  # one call per attribute: attribute k is read from prompt k
-        cols = {x: judge(finals[x], ds.rows[s], batch=gem.USE_BATCH).set_index("id")[x] for x in ds.A}
+        cols = {x: judge(finals[x], ds.rows[s]).set_index("id")[x] for x in ds.A}
         gem.save_scores(ds, METHOD, a.seed, s, pd.DataFrame(cols).reset_index().rename(columns={"index": "id"}))
-print(a.ds, METHOD, a.seed, "done, spent $%.3f" % gem.spent(gem.TAG.v)[0])
+print(a.ds, METHOD, a.seed, "done")

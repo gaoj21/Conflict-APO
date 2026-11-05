@@ -1,192 +1,30 @@
-"""Shared harness: judge and optimizer = the model behind the machine's `llm` package (llm-v12 transport contract).
-
-Every model call goes through `llm.chat_result` (or `llm.batch_result` for judge evaluation with WGC_BATCH=1); this
-file never names a provider, an endpoint or a key. Which model answers is decided by `llm/providers.json` (its
-`default`) or by LLM_PROVIDER / EAX_PROVIDER in the environment, as the contract specifies.
+"""Shared harness. Judge and optimizer = the llm package's default provider: every model call is
+llm.chat_result(None, messages, temperature=...); model, parameters, usage and prices are all the llm package's.
 
 Every method (v0, few-shot, OPRO, TextGrad CCC / Single-Task, DSPy zero-shot / MIPROv2 / GEPA) writes, per dataset and
-seed, the judge's scores on fit / sel / test to results/<run>/<ds>/<method>/seed<s>/scores_<split>.csv; evaluate.py
-then reports raw and readout test Spearman for all of them in the same way.
-
-Judge calls (temperature 0) are cached in one sqlite file per run; every call that reached the model is logged with
-its tokens (NULL when the provider reported no usage) and its cost from llm.UsageTracker (prices as configured in llm).
-
-Environment:
-  WGC_RUN       name of the run = results/<WGC_RUN>/ (default: the llm default provider's name)
-  WGC_BUDGET    stop every job once the run's cost (llm.UsageTracker) exceeds this many $ (default 300)
-  WGC_BATCH     1 = final judge evaluations use llm.batch_result (the provider's batch endpoint when it has one)
-  WGC_MAX_FAIL  consecutive failed calls (all threads together) after which everything stops (default 30)
-
-Only the temperature is passed (judge 0; each optimizer at its official temperature); every other parameter
-(max_tokens, reasoning, ...) is set in the llm package (providers.json `params`). Temperature-0 calls are cached.
+seed, the judge's scores on fit / sel / test to results/<WGC_RUN>/<ds>/<method>/seed<s>/scores_<split>.csv (WGC_RUN
+defaults to "gpt"); evaluate.py then reports raw and readout test Spearman for all of them in the same way.
 """
-import hashlib, json, os, re, sqlite3, sys, threading, time
+import json, os, re, sys
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np, pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)  # the llm/ package lives at the repository root
-try:
-    from llm import chat_result, batch_result, UsageTracker, default_provider  # noqa: E402
-except ImportError as _e:  # evaluate.py needs no model; any call without the package fails loudly
-    _MISSING = f"cannot import the llm/ package at {ROOT} ({_e}); see README"
-
-    def chat_result(*a, **k):
-        raise Abort(_MISSING)
-
-    batch_result = chat_result
-
-    class UsageTracker:  # noqa: D101
-        pass
-
-    def default_provider():
-        return "run"
-
-RUN = os.environ.get("WGC_RUN") or default_provider() or "run"  # results/<default provider> unless named
-OUT = f"{ROOT}/results/{RUN}"
-JUDGE = RUN  # model labels only (cache keys and cost log): the llm package decides where a call goes
-OPTIM = JUDGE  # the optimizer is the judge model itself (as in ProTeGi and GEPA)
+OUT = f"{ROOT}/results/{os.environ.get('WGC_RUN', 'gpt')}"
 DATASETS = ("hs2", "hanna", "ell", "merlin")
-BUDGET = float(os.environ.get("WGC_BUDGET", "300"))  # a safety stop, not part of any method
-MAX_FAIL = int(os.environ.get("WGC_MAX_FAIL", "30"))
-USE_BATCH = os.environ.get("WGC_BATCH", "0") == "1"
-# errors a retry cannot fix (bad / disabled key, no credit, moderation, misconfiguration): stop everything at once
-FATAL = re.compile(r"\b(401|402|403)\b|unauthori[sz]ed|forbidden|token_disabled|disabled|banned|insufficient|quota|"
-                   r"missing|unknown provider|not configured|invalid api key|api key|绕过|封", re.I)
 os.makedirs(f"{OUT}/logs", exist_ok=True)
-
-_LOCK = threading.Lock()
-_DB = None
-_FAILS = [0]  # consecutive failed calls across all threads
-_STOP = []  # set once a job must stop: every later call raises at once
-
-
-class _Tag:
-    v = ""
-
-
-TAG = _Tag()  # which method/run the calls belong to (for the cost log); one run per process
 
 
 class Abort(Exception):
     pass
 
 
-def _db():
-    global _DB
-    if _DB is None:
-        _DB = sqlite3.connect(f"{OUT}/cache.sqlite", check_same_thread=False, timeout=60)
-        _DB.execute("create table if not exists cache (k text primary key, txt text, in_tok int, out_tok int, cost real)")
-        _DB.execute("create table if not exists spend (ts real, tag text, model text, in_tok int, out_tok int, cost real)")
-        _DB.commit()
-    return _DB
-
-
-def spent(tag=None):
-    """(cost $, calls, input tokens, output tokens) logged so far, for the whole run or one tag prefix."""
-    with _LOCK:
-        q = "select coalesce(sum(cost),0), count(*), coalesce(sum(in_tok),0), coalesce(sum(out_tok),0) from spend"
-        return _db().execute(q + (" where tag like ?" if tag else ""), ((tag + "%",) if tag else ())).fetchone()
-
-
-def _key(model, temperature, max_tokens, messages):
-    return hashlib.sha256(json.dumps([model, temperature, max_tokens, messages], ensure_ascii=False).encode()).hexdigest()
-
-
-def _usage(res):
-    """LLMResult -> (in_tok, out_tok, cost) priced by llm.UsageTracker (prices as configured in llm);
-    (None, None, 0.0) when the provider reported no usage."""
-    t = UsageTracker()
-    if not t.add(res):
-        return None, None, 0.0
-    return res.usage.input_tokens, res.usage.output_tokens, t.cost
-
-
-def _record(model, k, cache, txt, it, ot, c):
-    with _LOCK:
-        db = _db()
-        db.execute("insert into spend values (?,?,?,?,?,?)", (time.time(), TAG.v, model, it, ot, c))
-        if cache:
-            db.execute("insert or replace into cache values (?,?,?,?,?)", (k, txt, it, ot, c))
-        db.commit()
-        _FAILS[0] = 0
-
-
-def _failed(err):
-    with _LOCK:
-        _FAILS[0] += 1
-        n = _FAILS[0]
-    if FATAL.search(err):
-        _STOP.append(f"non-retryable provider error: {err}")
-    elif n >= MAX_FAIL:
-        _STOP.append(f"{n} consecutive failed calls, last: {err}")
-    if _STOP:
-        raise Abort(_STOP[0])
-
-
-def _cached(k):
-    with _LOCK:
-        return _db().execute("select txt, in_tok, out_tok, cost from cache where k=?", (k,)).fetchone()
-
-
-def chat(messages, model=JUDGE, temperature=0.0, max_tokens=2000, cache=None):
-    """One completion -> (text, in_tok, out_tok, cost). Cached when temperature is 0 (or cache=True).
-    `model` is only a label: the llm package routes the call."""
-    cache = (temperature == 0) if cache is None else cache
-    k = _key(model, temperature, max_tokens, messages)
-    if cache and (row := _cached(k)):
-        return row[0], row[1], row[2], 0.0
-    if _STOP:
-        raise Abort(_STOP[0])
-    if spent()[0] > BUDGET:
-        raise Abort(f"budget ${BUDGET} reached")
-    err = ""
-    for t in range(4):  # the llm package already retries rate limits and 5xx twice; this covers longer outages
-        try:
-            res = chat_result(None, messages, temperature=temperature)  # other parameters: the llm package
-            txt = res.content or ""
-            it, ot, c = _usage(res)
-            _record(model, k, cache, txt, it, ot, c)
-            return txt, it, ot, c
-        except Abort:
-            raise
-        except Exception as e:  # noqa: BLE001  ProviderError and anything the transport raised
-            err = f"{type(e).__name__}: {str(e)[:300]}"
-            _failed(err)
-        time.sleep(15 * (t + 1))
-    raise RuntimeError(err)
-
-
-def chat_many(messages_list, model=JUDGE, max_tokens=2000, chunk=500):
-    """Temperature-0 completions of many message lists through llm.batch_result (native batch endpoint when the
-    provider has one), skipping cached ones. Returns texts in order; a failed chunk yields "" for its items."""
-    keys = [_key(model, 0.0, max_tokens, m) for m in messages_list]
-    out = [None] * len(keys)
-    todo = []
-    for i, k in enumerate(keys):
-        row = _cached(k)
-        if row:
-            out[i] = row[0]
-        else:
-            todo.append(i)
-    for j in range(0, len(todo), chunk):
-        if spent()[0] > BUDGET:
-            raise Abort(f"budget ${BUDGET} reached")
-        idx = todo[j:j + chunk]
-        try:
-            results = batch_result(None, [messages_list[i] for i in idx], temperature=0.0)
-        except Exception as e:  # noqa: BLE001
-            _failed(f"{type(e).__name__}: {str(e)[:300]}")
-            for i in idx:
-                out[i] = ""
-            continue
-        for i, res in zip(idx, results):
-            it, ot, c = _usage(res)
-            out[i] = res.content or ""
-            _record(model, keys[i], True, out[i], it, ot, c)
-        print(f"  batch {j + len(idx)}/{len(todo)} done", flush=True)
-    return out
+def chat(messages, temperature=0.0):
+    """One completion through the llm package -> text."""
+    from llm import chat_result
+    return chat_result(None, messages, temperature=temperature).content or ""
 
 
 def parse_scores(txt):
@@ -232,28 +70,19 @@ class DS:
         return self.judge_msgs(lambda r: [dict(role="system", content=system), dict(role="user", content=r["user"])], rows,
                                workers, strict)
 
-    def judge_msgs(self, make, rows, workers=16, strict=True, batch=False):
+    def judge_msgs(self, make, rows, workers=16, strict=True):
         """strict: stop if >20% of outputs are unparsed (outage / refusal). Optimizers scoring candidate prompts pass
-        strict=False: a candidate that breaks the output format just scores badly (see worst_case).
-        batch: send the uncached calls through llm.batch_result (final evaluations with WGC_BATCH=1)."""
-        def row_of(r, txt, it=None, ot=None):
-            sc = parse_scores(txt)
-            return dict(id=r["id"], **{a: sc.get(a, np.nan) for a in self.A}, in_tok=it, out_tok=ot, reason=txt[-300:])
-
+        strict=False: a candidate that breaks the output format just scores badly (see worst_case)."""
         def one(r):
             try:
-                txt, it, ot, c = chat(make(r))
-            except Abort:
-                raise
+                txt = chat(make(r))
             except Exception as e:  # noqa: BLE001
                 return dict(id=r["id"], error=str(e)[:200])
-            return row_of(r, txt, it, ot)
+            sc = parse_scores(txt)
+            return dict(id=r["id"], **{a: sc.get(a, np.nan) for a in self.A}, reason=txt[-300:])
 
-        if batch:
-            df = pd.DataFrame([row_of(r, t) for r, t in zip(rows, chat_many([make(r) for r in rows]))])
-        else:
-            with ThreadPoolExecutor(workers) as ex:
-                df = pd.DataFrame(list(ex.map(one, rows)))
+        with ThreadPoolExecutor(workers) as ex:
+            df = pd.DataFrame(list(ex.map(one, rows)))
         for a in self.A:
             if a not in df:
                 df[a] = np.nan
@@ -296,9 +125,6 @@ def have_scores(ds, method, seed):
 
 def judge_all_splits(ds, method, seed, instruction, workers=16):
     """Final evaluation of a single-instruction judge: score fit, sel and test, save the scores and the prompt."""
-    system = instruction.strip() + "\n\n" + ds.FORMAT
     for s in ("fit", "sel", "test"):
-        save_scores(ds, method, seed, s, ds.judge_msgs(
-            lambda r: [dict(role="system", content=system), dict(role="user", content=r["user"])], ds.rows[s], workers,
-            batch=USE_BATCH))
+        save_scores(ds, method, seed, s, ds.judge(instruction, ds.rows[s], workers))
     open(f"{ds.out(method, seed)}/final_prompt.txt", "w").write(instruction)

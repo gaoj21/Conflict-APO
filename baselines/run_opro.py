@@ -7,7 +7,7 @@ so the judge sees instruction + v0 + output format.
 
 Our glue: the scorer (eval_utils.evaluate_single_instruction) is replaced by the LLM judge, and an instruction's
 training score is its mean per-attribute Spearman on the training items (written to every row's "accuracy", so the
-official average equals it); data loading (load_bbh_task_data) returns our items; the optimizer call goes to the same model (gem.chat -> llm package).
+official average equals it); data loading (load_bbh_task_data) returns our items; the optimizer call goes to the same model (llm package).
 Changed defaults: num_search_steps 200 -> 12 (budget), old_instruction_score_threshold 0.3 -> 0.0 (Spearman scale);
 the file-name helper is made non-ASCII safe (it crashes on characters such as an em dash).
 Train items: 160 drawn from fit (OPRO uses a small training split); the final instruction is the one with the best
@@ -31,7 +31,6 @@ ap.add_argument("--ntrain", type=int, default=160); ap.add_argument("--workers",
 a = ap.parse_args()
 ds = gem.DS(a.ds)
 METHOD = "opro"
-gem.TAG.v = f"{a.ds}/{METHOD}/seed{a.seed}"
 np.random.seed(a.seed)
 OUTD = ds.out(METHOD, a.seed)
 
@@ -55,7 +54,7 @@ def evaluate_single_instruction(data, instruction, eval_index_all, **kw):
     SCORES[instruction] = float(v)
     out = pd.DataFrame(dict(raw_answer=df.reason, true_answer=[data[i]["target"] for i in idx]), index=idx)
     out["accuracy"] = max(float(v), 0.0)
-    print(f"  score {v:.3f}  spent ${gem.spent(gem.TAG.v)[0]:.2f}  ins: {instruction[:100]!r}", flush=True)
+    print(f"  score {v:.3f}  ins: {instruction[:100]!r}", flush=True)
     return out
 
 
@@ -70,8 +69,7 @@ eval_utils.load_bbh_task_data = lambda task_name, base_dir=None, qa_format=True:
 
 
 def call_optimizer(input_text, temperature=1.0, **kw):
-    return [gem.chat([dict(role="user", content=input_text)], model=gem.OPTIM, temperature=temperature, max_tokens=512,
-                     cache=False)[0]]
+    return [gem.chat([dict(role="user", content=input_text)], temperature=temperature)]
 
 
 save = f"{OUTD}/opro"
@@ -99,4 +97,4 @@ best = max(SCORES, key=SCORES.get)
 json.dump(SCORES, open(f"{OUTD}/train_scores.json", "w"), indent=1)
 print(f"best training Spearman {SCORES[best]:.3f}: {best!r}")
 gem.judge_all_splits(ds, METHOD, a.seed, full_instruction(best), a.workers)
-print(a.ds, METHOD, a.seed, "done, spent $%.3f" % gem.spent(gem.TAG.v)[0])
+print(a.ds, METHOD, a.seed, "done")
