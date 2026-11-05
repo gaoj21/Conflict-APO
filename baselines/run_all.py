@@ -3,7 +3,7 @@ Re-running it resumes: finished jobs (all three score files present) and jobs st
 A file results/<WGC_RUN>/STOP makes it start no new jobs.
 Prints progress every --every seconds: jobs done / running / queued / failed, and each running job's last log line.
   python baselines/run_all.py [--seeds 0,1,2] [--ds hs2,hanna,ell,merlin] [--methods v0,fewshot,...] [--par 10]"""
-import argparse, os, subprocess, sys, time
+import argparse, glob, json, os, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
@@ -57,6 +57,31 @@ def last_line(n):
         return ""
 
 
+def usage(n):
+    d, m, s = n.split("_", 2)[0], *n.split("_", 1)[1].rsplit("_", 1)
+    try:
+        return json.load(open(f"{common.OUT}/{d}/{m}/seed{s}/usage.json"))
+    except (OSError, ValueError):
+        return {}
+
+
+def total_usage():
+    """Sum over every usage.json of this run directory (all jobs ever run, not only this scheduler's)."""
+    tot, any_cost = {}, False
+    for f in glob.glob(f"{common.OUT}/*/*/seed*/usage.json"):
+        try:
+            u = json.load(open(f))
+        except (OSError, ValueError):
+            continue
+        for k in ("calls", "uncounted", "input_tokens", "output_tokens"):
+            tot[k] = tot.get(k, 0) + (u.get(k) or 0)
+        if isinstance(u.get("cost"), (int, float)):
+            tot["cost"] = tot.get("cost", 0.0) + u["cost"]; any_cost = True
+    if not any_cost:
+        tot["cost"] = None
+    return tot
+
+
 def fmt(sec):
     return f"{int(sec // 3600)}h{int(sec % 3600 // 60):02d}m"
 
@@ -68,7 +93,8 @@ while jobs or running:
         if p.poll() is None:
             still.append((n, p, ts))
         elif p.returncode == 0:
-            done.append(n); print(time.strftime("%H:%M"), f"done   {n} ({fmt(time.time() - ts)})", flush=True)
+            done.append(n)
+            print(time.strftime("%H:%M"), f"done   {n} ({fmt(time.time() - ts)}; {common.fmt_usage(usage(n))})", flush=True)
         else:
             failed.append(n); print(time.strftime("%H:%M"), f"FAILED {n} (exit {p.returncode}): {last_line(n)}", flush=True)
     running = still
@@ -82,9 +108,11 @@ while jobs or running:
     if time.time() - last >= a.every and running:
         last = time.time()
         print(f"--- {time.strftime('%H:%M')}  {len(done)}/{total} done, {len(running)} running, {len(jobs)} queued, "
-              f"{len(failed)} failed  (elapsed {fmt(time.time() - t0)})", flush=True)
+              f"{len(failed)} failed  (elapsed {fmt(time.time() - t0)})  |  run total: {common.fmt_usage(total_usage())}",
+              flush=True)
         for n, p, ts in running:
-            print(f"    {n:<28} {fmt(time.time() - ts)}  {last_line(n)}", flush=True)
+            print(f"    {n:<28} {fmt(time.time() - ts)}  [{common.fmt_usage(usage(n))}]  {last_line(n)[:80]}", flush=True)
     time.sleep(5)
 print(f"ALL_JOBS_DONE: {len(done)} done, {len(failed)} failed" + (f" ({', '.join(failed)}; rerun to retry)" if failed else ""),
       flush=True)
+print(f"run total ({common.OUT}): {common.fmt_usage(total_usage())}", flush=True)

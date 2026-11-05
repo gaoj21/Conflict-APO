@@ -103,6 +103,10 @@ nohup python baselines/run_all.py --ds hs2,hanna,ell,merlin --seeds 0,1,2 --par 
   （完成 / 运行 / 排队 / 失败）以及每个运行中任务的已运行时间和日志最后一行，例如 OPRO 的
   `[step ~3/12, instruction #22] score ...`、TextGrad 的 `step 5/12 val MAE ...`、最终评测的
   `judged 352 items in 40s, 100% parsed`。后台运行时用 `tail -f run_all.log` 查看。
+- **token 和花费**：每个任务运行时，每 10 秒把自己的 token 和花费（取自 `UsageTracker`）写入 `usage.json`。调度器的每次进度报告
+  都会显示每个运行中任务的消耗和整个 run 的累计，例如
+  `run total: 10.43M in / 1.04M out tok, $7.30`；任务完成时也会打印它的总消耗。任何时候都可以用
+  `python baselines/usage.py` 查看每个任务的消耗和总计。中断后重跑的任务会接着之前的消耗继续累计。
 - 每个任务的完整日志在 `results/gpt/logs/<ds>_<method>_<seed>.log`。
 - **断点续跑**：直接重跑同一条命令，已完成的任务（三个 `scores_*.csv` 都在）和正在运行的任务会被跳过。
 - **停止**：`touch results/gpt/STOP` 之后不再启动新任务，正在跑的任务会继续跑完。要立即停止，就 kill 对应进程。
@@ -150,7 +154,7 @@ results/gpt/
 ├── results.csv           evaluate.py 汇总
 └── <ds>/<method>/seed<s>/
     ├── scores_fit.csv  scores_sel.csv  scores_test.csv    judge 分数（id + 各属性）
-    ├── usage.json        这个任务的调用数、token（未回报 usage 的调用单独计数）以及 UsageTracker 的统计和花费
+    ├── usage.json        这个任务的调用数、token、花费（未回报 usage 的调用单独计数），以及 UsageTracker 的原始统计
     ├── final_prompt.txt / final_prompts.json / program.json   最终 prompt（或 DSPy program）
     └── 各方法的过程记录（opro/、hist_*.json、gepa_log/ 等）
 ```

@@ -29,6 +29,53 @@ from llm import ProviderError, UsageTracker, batch_result, chat_result  # noqa: 
 TRACKER = UsageTracker()  # every call of this process (one run per process)
 _TOK = dict(calls=0, uncounted=0, input_tokens=0, output_tokens=0, cache_read_tokens=0, reasoning_tokens=0)
 _LOCK = threading.Lock()
+_USAGE = dict(path=None, base={}, written=0.0)  # usage.json of this process's run; totals of earlier attempts
+
+
+def _tracker_dict():
+    """The UsageTracker's own totals: summary() if it has one, else its numeric public attributes."""
+    if callable(getattr(TRACKER, "summary", None)):
+        return dict(TRACKER.summary())
+    out = {}
+    for k in dir(TRACKER):
+        if not k.startswith("_"):
+            try:
+                v = getattr(TRACKER, k)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                out[k] = v
+    return out
+
+
+def _cost(t):
+    """$ from the UsageTracker's totals (its `cost`, or the first numeric key with "cost" in its name); None if absent."""
+    for k in ("cost", "total_cost", "cost_usd"):
+        if isinstance(t.get(k), (int, float)):
+            return float(t[k])
+    v = next((v for k, v in t.items() if "cost" in k.lower() and isinstance(v, (int, float))), None)
+    return None if v is None else float(v)
+
+
+def usage_now():
+    """Totals of this run so far (earlier interrupted attempts included): calls, tokens, cost ($ or None)."""
+    t = _tracker_dict()
+    with _LOCK:
+        cur = dict(_TOK, cost=_cost(t))
+    b = _USAGE["base"]
+    out = {k: cur[k] + (b.get(k) or 0) for k in _TOK}
+    out["cost"] = None if cur["cost"] is None else cur["cost"] + (b.get("cost") or 0)
+    return out, t
+
+
+def _write_usage(force=False):
+    if not _USAGE["path"] or (not force and time.time() - _USAGE["written"] < 10):
+        return
+    _USAGE["written"] = time.time()
+    u, t = usage_now()
+    tmp = _USAGE["path"] + ".tmp"
+    json.dump(dict(u, usage_tracker=t), open(tmp, "w"), indent=1, default=str)
+    os.replace(tmp, _USAGE["path"])
 
 
 def _track(res):
@@ -40,7 +87,16 @@ def _track(res):
         else:
             for k in ("input_tokens", "output_tokens", "cache_read_tokens", "reasoning_tokens"):
                 _TOK[k] += getattr(res.usage, k, 0) or 0
+    _write_usage()
     return res
+
+
+def fmt_usage(u):
+    """'1.23M in / 0.12M out tok, $4.56' (cost shown as '$?' when the tracker gives none)."""
+    c = u.get("cost")
+    return (f"{(u.get('input_tokens') or 0) / 1e6:.2f}M in / {(u.get('output_tokens') or 0) / 1e6:.2f}M out tok, "
+            + (f"${c:.2f}" if isinstance(c, (int, float)) else "$?")
+            + (f" ({u['uncounted']} calls without usage)" if u.get("uncounted") else ""))
 
 
 def chat(messages, temperature=0.0):
@@ -53,15 +109,10 @@ def chat_batch(messages_list, temperature=0.0):
     return [_track(r).content or "" for r in batch_result(None, list(messages_list), temperature=temperature)]
 
 
-def save_usage(outdir):
-    """Write this process's token totals and the UsageTracker's own totals / cost to <outdir>/usage.json."""
-    t = TRACKER.summary() if callable(getattr(TRACKER, "summary", None)) else {
-        k: getattr(TRACKER, k) for k in dir(TRACKER) if not k.startswith("_") and
-        isinstance(getattr(TRACKER, k, None), (int, float))}
-    with _LOCK:
-        info = dict(tokens=dict(_TOK), usage_tracker=t)
-    json.dump(info, open(f"{outdir}/usage.json", "w"), indent=1, default=str)
-    print("usage:", json.dumps(info, default=str), flush=True)
+def save_usage(outdir=None):
+    """Write the final totals to usage.json and print them."""
+    _write_usage(force=True)
+    print("usage:", fmt_usage(usage_now()[0]), flush=True)
 
 
 def parse_scores(txt):
@@ -90,6 +141,12 @@ class DS:
     def out(self, method, seed=0):
         d = f"{OUT}/{self.name}/{method}/seed{seed}"
         os.makedirs(d, exist_ok=True)
+        if _USAGE["path"] is None:  # the first run directory of this process: its tokens / cost go to usage.json
+            _USAGE["path"] = f"{d}/usage.json"
+            try:  # an interrupted earlier attempt of this run: keep counting from its totals
+                _USAGE["base"] = json.load(open(_USAGE["path"]))
+            except (OSError, ValueError):
+                _USAGE["base"] = {}
         return d
 
     def subset(self, split, n, seed=0):
