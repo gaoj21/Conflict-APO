@@ -21,14 +21,11 @@ METHODS = {  # method dir -> command (seed-independent methods run for seed 0 on
     "textgrad_ccc": ("run_textgrad.py", ["ccc"], True), "textgrad_single": ("run_textgrad.py", ["single"], True),
     "dspy_mipro": ("run_dspy.py", ["mipro"], True), "dspy_gepa": ("run_dspy.py", ["gepa"], True)}
 def running_cmds():
-    out = []
-    for pid in os.listdir("/proc"):
-        if pid.isdigit():
-            try:
-                out.append(open(f"/proc/{pid}/cmdline").read().replace("\0", " "))
-            except OSError:
-                pass
-    return out
+    """Command lines of all running processes (ps works on macOS and Linux; -ww: never truncate)."""
+    try:
+        return subprocess.run(["ps", "-axww", "-o", "command"], capture_output=True, text=True, check=True).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        return []
 
 
 RUNNING = running_cmds()
