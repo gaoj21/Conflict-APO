@@ -1,5 +1,7 @@
 # WGC baselines：基于 `llm` 包的版本（用于跑 GPT 主表）
 
+> 接手运行请先读 **[HANDOVER.md](HANDOVER.md)**。用 Codex（GPT）跑时，执行 `cp -r llm_codex llm` 即可。
+
 这是 "Decode the Shared Axes, Prompt the Content" 主表实验代码的一个自包含版本。所有模型调用都经过仓库根目录的
 `llm/` 包（`llm-v12` contract）。**`llm/` 由你的机器提供**，不在本仓库里（`.gitignore` 已排除），模型、provider、
 参数、key 和价格都在那里配置好。本仓库里的代码不出现任何 provider 名、模型名、endpoint 或 key。
