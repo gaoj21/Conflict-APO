@@ -73,13 +73,13 @@ codex login                                              # ChatGPT 账号登录�
 ```json
 "codex": {
   "adapter": "codex",
-  "codex_config": {"model_reasoning_effort": "low"},
+  "codex_config": {"model_reasoning_effort": "none"},
   "params": {"timeout": 300}
 }
 ```
 
 - `"model": "gpt-5.6-luna"`：已经设好（与之前的 GPT 实验一致）。不写的话会用 `~/.codex/config.toml` 里的默认模型。
-- `codex_config`：每一项都会变成 `codex exec -c key=value`。`model_reasoning_effort` 控制推理强度；之前的 GPT 和 Gemma 实验都关闭了推理，这里设成该模型支持的最低档即可。
+- `codex_config`：每一项都会变成 `codex exec -c key=value`。`model_reasoning_effort` 已设为 `"none"`（关闭推理），与之前的 GPT 和 Gemma 实验一致。
 - `codex_bin`：`codex` 不在 PATH 里时，填可执行文件的路径（也可以用环境变量 `CODEX_BIN`）。
 - 如果改用 OpenAI 官方 API，把 `default` 改成 `"gpt"`，在 `.env` 里写 `OPENAI_API_KEY=...`。这条路按 token 计费，支持 temperature，跑全量更合适。
 
