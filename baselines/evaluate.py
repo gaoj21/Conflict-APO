@@ -12,7 +12,7 @@ import numpy as np, pandas as pd
 from sklearn.isotonic import IsotonicRegression
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gem import DS, OUT  # noqa: E402
+from common import DS, OUT  # noqa: E402
 
 LAMS = [0.3, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 1e5]
 sp = lambda x, y: pd.Series(np.asarray(x, float)).corr(pd.Series(np.asarray(y, float)), method="spearman")

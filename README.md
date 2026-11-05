@@ -10,7 +10,7 @@
 - 每个方法都把 judge 在 fit / sel / test 上的打分存下来，`evaluate.py` 用同一套流程报告 raw 和
   readout（decoder）的 test Spearman，外加 isotonic 和 length-debias 两个 post-hoc baseline。
 
-和旧版（OpenRouter / juapi）相比，只有 `baselines/gem.py` 里的调用层换了，各方法的 runner、超参数和评测逻辑都没变。
+和旧版（OpenRouter / juapi）相比，只有 `baselines/common.py` 里的调用层换了，各方法的 runner、超参数和评测逻辑都没变。
 
 ## 目录结构
 
@@ -26,7 +26,7 @@ Conflict-APO/
 │       ├── gold.csv      人工分数：id, 各属性, z（= log 长度，readout 用）
 │       └── fit.jsonl  sel.jsonl  test.jsonl   每行 {"id", "user"}，user 是 judge 要打分的文本
 ├── baselines/
-│   ├── gem.py            公共 harness：调用 llm、数据集类、打分解析
+│   ├── common.py           公共 harness：调用 llm、数据集类、打分解析
 │   ├── smoke.py          整条链路的冒烟测试（几次真实调用）
 │   ├── run_simple.py     v0, fewshot
 │   ├── run_opro.py       OPRO（third_party 里的官方代码）
@@ -56,7 +56,7 @@ cp -r /path/to/your/llm ./llm                     # 或 ln -s；再把 llm 需�
 
 ## 2. 和 `llm` 的接口
 
-只用 `llm` 的公开 API（`from llm import chat_result, batch_result, UsageTracker, ProviderError`），全部在 `baselines/gem.py`：
+只用 `llm` 的公开 API（`from llm import chat_result, batch_result, UsageTracker, ProviderError`），全部在 `baselines/common.py`：
 
 | 用途 | 调用 |
 |---|---|

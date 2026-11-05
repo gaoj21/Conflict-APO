@@ -16,31 +16,31 @@ import numpy as np, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import gem  # noqa: E402
+import common  # noqa: E402
 import dspy  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("ds"); ap.add_argument("opt", choices=["mipro", "gepa", "zeroshot"]); ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--nval", type=int, default=200); ap.add_argument("--workers", type=int, default=16)
 a = ap.parse_args()
-ds = gem.DS(a.ds)
+ds = common.DS(a.ds)
 METHOD = f"dspy_{a.opt}"
 OUTD = ds.out(METHOD, a.seed)
 
-class GemLM(dspy.BaseLM):
+class LLM_LM(dspy.BaseLM):
     """DSPy LM routed through the llm package (DSPy never sees a provider)."""
 
     def forward(self, prompt=None, messages=None, **kwargs):
         from types import SimpleNamespace as NS
         kw = {**self.kwargs, **kwargs}
         msgs = messages or [dict(role="user", content=prompt)]
-        txt = gem.chat(msgs, temperature=kw.get("temperature", 0.0))
+        txt = common.chat(msgs, temperature=kw.get("temperature", 0.0))
         return NS(choices=[NS(message=NS(content=txt), finish_reason="stop")], model=self.model,
                   usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})  # usage: see the llm package
 
 
-lm_judge = GemLM("llm", temperature=0.0, cache=False)
-lm_opt = GemLM("llm", temperature=1.0, cache=False)
+lm_judge = LLM_LM("llm", temperature=0.0, cache=False)
+lm_opt = LLM_LM("llm", temperature=1.0, cache=False)
 dspy.configure(lm=lm_judge)
 
 fields = {"item": (str, dspy.InputField(desc="the item to rate"))}
@@ -109,7 +109,7 @@ for s in ("fit", "sel", "test"):
             df[x] = np.nan
     bad = df[ds.A].isna().any(axis=1).mean()
     if bad > 0.2:
-        raise gem.Abort(f"{METHOD} {s}: {bad:.0%} unparsed")
-    gem.save_scores(ds, METHOD, a.seed, s, df)
-gem.save_usage(OUTD)
+        raise common.Abort(f"{METHOD} {s}: {bad:.0%} unparsed")
+    common.save_scores(ds, METHOD, a.seed, s, df)
+common.save_usage(OUTD)
 print(a.ds, METHOD, a.seed, "done")

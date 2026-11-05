@@ -21,7 +21,7 @@ import numpy as np, pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "third_party", "opro-main"))
-import gem  # noqa: E402
+import common  # noqa: E402
 from opro.optimization import opt_utils  # noqa: E402  (official)
 from opro.evaluation import eval_utils  # noqa: E402  (official)
 
@@ -29,7 +29,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("ds"); ap.add_argument("--seed", type=int, default=0); ap.add_argument("--steps", type=int, default=12)
 ap.add_argument("--ntrain", type=int, default=160); ap.add_argument("--workers", type=int, default=16)
 a = ap.parse_args()
-ds = gem.DS(a.ds)
+ds = common.DS(a.ds)
 METHOD = "opro"
 np.random.seed(a.seed)
 OUTD = ds.out(METHOD, a.seed)
@@ -50,7 +50,7 @@ def evaluate_single_instruction(data, instruction, eval_index_all, **kw):
         return pd.DataFrame({"accuracy": [np.nan]})
     rows = [train_rows[i] for i in idx]
     df = ds.worst_case(ds.judge(full_instruction(instruction), rows, a.workers, strict=False))
-    v = np.nanmean(ds.spearman(df))
+    v = float(np.nan_to_num(np.nanmean(ds.spearman(df))))  # constant / failed outputs: no rank information -> 0
     SCORES[instruction] = float(v)
     out = pd.DataFrame(dict(raw_answer=df.reason, true_answer=[data[i]["target"] for i in idx]), index=idx)
     out["accuracy"] = max(float(v), 0.0)
@@ -69,7 +69,7 @@ eval_utils.load_bbh_task_data = lambda task_name, base_dir=None, qa_format=True:
 
 
 def call_optimizer(input_text, temperature=1.0, **kw):
-    return [gem.chat([dict(role="user", content=input_text)], temperature=temperature)]
+    return [common.chat([dict(role="user", content=input_text)], temperature=temperature)]
 
 
 save = f"{OUTD}/opro"
@@ -96,5 +96,5 @@ opt_utils.run_evolution(
 best = max(SCORES, key=SCORES.get)
 json.dump(SCORES, open(f"{OUTD}/train_scores.json", "w"), indent=1)
 print(f"best training Spearman {SCORES[best]:.3f}: {best!r}")
-gem.judge_all_splits(ds, METHOD, a.seed, full_instruction(best), a.workers)
+common.judge_all_splits(ds, METHOD, a.seed, full_instruction(best), a.workers)
 print(a.ds, METHOD, a.seed, "done")

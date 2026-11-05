@@ -5,13 +5,13 @@ Makes real, billed calls (3 judge calls plus one optimizer-style call) and print
 import argparse, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gem  # noqa: E402
+import common  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("ds", nargs="?", default="hanna"); ap.add_argument("--n", type=int, default=3)
 a = ap.parse_args()
-ds = gem.DS(a.ds)
-print(f"results -> {gem.OUT}")
+ds = common.DS(a.ds)
+print(f"results -> {common.OUT}")
 print(f"{a.ds}: attributes {ds.A}, scale {ds.LO}-{ds.HI}, fit/sel/test = "
       f"{len(ds.rows['fit'])}/{len(ds.rows['sel'])}/{len(ds.rows['test'])}")
 rows = ds.rows["test"][:a.n]
@@ -19,7 +19,7 @@ df = ds.judge(ds.v0, rows, workers=a.n, strict=False)
 for _, r in df.iterrows():
     print(r["id"], {x: r[x] for x in ds.A})
 print("human:", ds.gold.loc[[r["id"] for r in rows], ds.A].round(2).to_dict("records"))
-txt = gem.chat([dict(role="user", content="Rewrite this instruction in one sentence: " + ds.v0[:400])], temperature=0.7)
+txt = common.chat([dict(role="user", content="Rewrite this instruction in one sentence: " + ds.v0[:400])], temperature=0.7)
 print("optimizer-style call:", repr(txt[:200]))
 parsed = df[ds.A].notna().all(axis=1).mean()
 print(f"parsed {parsed:.0%} of judge outputs")

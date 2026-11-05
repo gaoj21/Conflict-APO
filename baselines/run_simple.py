@@ -7,13 +7,13 @@ import argparse, json, os, sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import gem  # noqa: E402
+import common  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("ds"); ap.add_argument("method"); ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--k", type=int, default=5); ap.add_argument("--workers", type=int, default=16)
 a = ap.parse_args()
-ds = gem.DS(a.ds)
+ds = common.DS(a.ds)
 if a.method == "v0":
     instr = ds.v0
 else:
@@ -22,5 +22,5 @@ else:
                         json.dumps({x: int(round(v)) for x, v in zip(ds.A, ds.human([r["id"]])[0])})
                         for i, r in enumerate(ex))
     instr = ds.v0 + "\n\n## Examples rated by human experts\n\n" + shots
-gem.judge_all_splits(ds, a.method, a.seed, instr, a.workers)
+common.judge_all_splits(ds, a.method, a.seed, instr, a.workers)
 print(a.ds, a.method, a.seed, "done")

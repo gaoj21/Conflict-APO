@@ -20,7 +20,7 @@ import numpy as np, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import gem  # noqa: E402
+import common  # noqa: E402
 import textgrad as tg  # noqa: E402
 from textgrad.engine import EngineLM  # noqa: E402
 
@@ -29,7 +29,7 @@ ap.add_argument("ds"); ap.add_argument("mode", choices=["ccc", "single"]); ap.ad
 ap.add_argument("--steps", type=int, default=12); ap.add_argument("--batch", type=int, default=3)
 ap.add_argument("--nval", type=int, default=100); ap.add_argument("--workers", type=int, default=16)
 a = ap.parse_args()
-ds = gem.DS(a.ds)
+ds = common.DS(a.ds)
 METHOD = f"textgrad_{a.mode}"
 OUTD = ds.out(METHOD, a.seed)
 
@@ -42,7 +42,7 @@ class LLMEngine(EngineLM):
 
     def generate(self, prompt, system_prompt=None, **kwargs):
         msgs = ([dict(role="system", content=system_prompt)] if system_prompt else []) + [dict(role="user", content=prompt)]
-        return gem.chat(msgs, temperature=self.temperature)
+        return common.chat(msgs, temperature=self.temperature)
 
     def __call__(self, prompt, **kwargs):
         return self.generate(prompt, **kwargs)
@@ -128,13 +128,13 @@ if a.mode == "ccc":
     final = optimize(ds.A, "all")
     open(f"{OUTD}/final_prompt.txt", "w").write(final)
     for s in ("fit", "sel", "test"):
-        gem.save_scores(ds, METHOD, a.seed, s, judge(final, ds.rows[s]))
+        common.save_scores(ds, METHOD, a.seed, s, judge(final, ds.rows[s]))
 else:
     with ThreadPoolExecutor(len(ds.A)) as ex:  # the per-attribute runs are independent: run them side by side
         finals = dict(zip(ds.A, ex.map(lambda kx: optimize([kx[1]], kx[1], kx[0]), enumerate(ds.A))))
     json.dump(finals, open(f"{OUTD}/final_prompts.json", "w"), indent=1)
     for s in ("fit", "sel", "test"):  # one call per attribute: attribute k is read from prompt k
         cols = {x: judge(finals[x], ds.rows[s]).set_index("id")[x] for x in ds.A}
-        gem.save_scores(ds, METHOD, a.seed, s, pd.DataFrame(cols).reset_index().rename(columns={"index": "id"}))
-gem.save_usage(OUTD)
+        common.save_scores(ds, METHOD, a.seed, s, pd.DataFrame(cols).reset_index().rename(columns={"index": "id"}))
+common.save_usage(OUTD)
 print(a.ds, METHOD, a.seed, "done")
