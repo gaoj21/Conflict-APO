@@ -9,5 +9,4 @@ optuna==5.0.0          # MIPROv2
 absl-py==2.5.1         # OPRO
 immutabledict==4.3.1   # OPRO
 
-pytest                 # llm/tests
-# litellm              # only for providers with "type": "litellm"
+# plus whatever your llm/ package needs

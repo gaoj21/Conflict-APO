@@ -9,11 +9,11 @@ seed, the judge's scores on fit / sel / test to results/<run>/<ds>/<method>/seed
 then reports raw and readout test Spearman for all of them in the same way.
 
 Judge calls (temperature 0) are cached in one sqlite file per run; every call that reached the model is logged with
-its tokens (NULL when the provider reported no usage) and its cost from llm.UsageTracker (EVO_TOKEN_* prices).
+its tokens (NULL when the provider reported no usage) and its cost from llm.UsageTracker (prices as configured in llm).
 
 Environment:
-  WGC_RUN       name of the run = results/<WGC_RUN>/ (default "gpt"); use one name per model
-  WGC_BUDGET    stop every job once the logged cost of the run exceeds this many $ (default 300; needs the prices)
+  WGC_RUN       name of the run = results/<WGC_RUN>/ (default: the llm default provider's name)
+  WGC_BUDGET    stop every job once the run's cost (llm.UsageTracker) exceeds this many $ (default 300)
   WGC_BATCH     1 = final judge evaluations use llm.batch_result (the provider's batch endpoint when it has one)
   WGC_MAX_FAIL  consecutive failed calls (all threads together) after which everything stops (default 30)
 
@@ -28,7 +28,7 @@ import numpy as np, pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)  # the llm/ package lives at the repository root
 try:
-    from llm import chat_result, batch_result, UsageTracker  # noqa: E402
+    from llm import chat_result, batch_result, UsageTracker, default_provider  # noqa: E402
 except ImportError as _e:  # evaluate.py needs no model; any call without the package fails loudly
     _MISSING = f"cannot import the llm/ package at {ROOT} ({_e}); see README"
 
@@ -40,7 +40,10 @@ except ImportError as _e:  # evaluate.py needs no model; any call without the pa
     class UsageTracker:  # noqa: D101
         pass
 
-RUN = os.environ.get("WGC_RUN", "gpt")
+    def default_provider():
+        return "run"
+
+RUN = os.environ.get("WGC_RUN") or default_provider() or "run"  # results/<default provider> unless named
 OUT = f"{ROOT}/results/{RUN}"
 JUDGE = RUN  # model labels only (cache keys and cost log): the llm package decides where a call goes
 OPTIM = JUDGE  # the optimizer is the judge model itself (as in ProTeGi and GEPA)
@@ -92,7 +95,7 @@ def _key(model, temperature, max_tokens, messages):
 
 
 def _usage(res):
-    """LLMResult -> (in_tok, out_tok, cost) priced by llm.UsageTracker (EVO_TOKEN_* prices);
+    """LLMResult -> (in_tok, out_tok, cost) priced by llm.UsageTracker (prices as configured in llm);
     (None, None, 0.0) when the provider reported no usage."""
     t = UsageTracker()
     if not t.add(res):
