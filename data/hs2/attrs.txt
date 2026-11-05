@@ -1,0 +1,5 @@
+helpfulness
+correctness
+coherence
+complexity
+verbosity

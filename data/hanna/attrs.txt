@@ -1,0 +1,6 @@
+relevance
+coherence
+empathy
+surprise
+engagement
+complexity

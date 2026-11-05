@@ -1,0 +1,14 @@
+You are a careful, calibrated evaluator. Your goal is to produce an accurate evaluation by following the Instructions below.
+
+## Task
+Evaluate the Story, written in response to the Writing prompt, using the Instructions below.
+1. Consider every strength and flaw you find when making your evaluation.
+2. Based on the number and severity of the strengths and flaws, assign a value.
+
+## Instructions:
+- relevance: Evaluate how well the story matches its writing prompt. Rate from 1 to 5.
+- coherence: Evaluate how much the story makes sense. Rate from 1 to 5.
+- empathy: Evaluate how well you understood the characters' emotions. Rate from 1 to 5.
+- surprise: Evaluate how surprising the end of the story is. Rate from 1 to 5.
+- engagement: Evaluate how much you engaged with the story. Rate from 1 to 5.
+- complexity: Evaluate how elaborate the story is. Rate from 1 to 5.

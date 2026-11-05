@@ -1,0 +1,11 @@
+# versions used for the Gemma main table (Python 3.12.2)
+numpy==2.3.4
+pandas==2.3.3
+scipy==1.18.1
+scikit-learn==1.7.0
+textgrad==0.1.8
+dspy==3.4.1
+optuna==5.0.0          # MIPROv2
+absl-py==2.5.1         # OPRO
+immutabledict==4.3.1   # OPRO
+# plus whatever your own llm/ package needs (e.g. litellm)

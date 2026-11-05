@@ -1,0 +1,3 @@
+## Output format:
+Think briefly (at most a few sentences), then end your reply with exactly one line of JSON with an integer from 1 to 6 for each attribute (1 = CEFR A1, 2 = A2, 3 = B1, 4 = B2, 5 = C1, 6 = C2):
+{"grammar": 1-6, "orthography": 1-6, "vocab_range": 1-6, "vocab_control": 1-6, "coherence": 1-6, "sociolinguistic": 1-6}
