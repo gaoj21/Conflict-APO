@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from .registry import ProviderError, get_provider
 
 MAX_PARALLEL = int(os.environ.get("LLM_MAX_PARALLEL", "16"))  # bound of the parallel fallback of batch()
-RETRY_BACKOFF = (5.0, 20.0)  # seconds before the 2nd and 3rd attempt; rate limits and 5xx only
+# seconds before the 2nd and 3rd attempt; rate limits and 5xx only (env LLM_RETRY_BACKOFF="60,180")
+RETRY_BACKOFF = tuple(float(x) for x in os.environ.get("LLM_RETRY_BACKOFF", "5,20").split(","))
 OPTIONS = {"temperature", "top_p", "max_tokens", "stop", "timeout", "seed"}
 
 

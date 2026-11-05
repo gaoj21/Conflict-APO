@@ -224,8 +224,14 @@ def have_scores(ds, method, seed):
 
 def judge_all_splits(ds, method, seed, instruction, workers=16):
     """Final evaluation of a single-instruction judge: score fit, sel and test, save the scores and the prompt."""
+    prev = f"{ds.out(method, seed)}/final_prompt.txt"
+    same = os.path.exists(prev) and open(prev).read() == instruction  # an interrupted evaluation of the same prompt
     for s in ("fit", "sel", "test"):
+        if same and os.path.exists(f"{ds.out(method, seed)}/scores_{s}.csv"):
+            print(f"final evaluation: {s} already scored, skipped", flush=True)
+            continue
         print(f"final evaluation: {s} ({len(ds.rows[s])} items)", flush=True)
+        open(prev, "w").write(instruction)
         save_scores(ds, method, seed, s, ds.judge(instruction, ds.rows[s], workers))
     open(f"{ds.out(method, seed)}/final_prompt.txt", "w").write(instruction)
     save_usage(ds.out(method, seed))
