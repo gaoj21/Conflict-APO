@@ -9,7 +9,7 @@ seed, the judge's scores on fit / sel / test to results/<run>/<ds>/<method>/seed
 then reports raw and readout test Spearman for all of them in the same way.
 
 Judge calls (temperature 0) are cached in one sqlite file per run; every call that reached the model is logged with
-its tokens (NULL when the provider reported no usage) and its cost at the EVO_TOKEN_*_PRICE_PER_1M prices.
+its tokens (NULL when the provider reported no usage) and its cost from llm.UsageTracker (EVO_TOKEN_* prices).
 
 Environment:
   WGC_RUN       name of the run = results/<WGC_RUN>/ (default "gpt"); use one name per model
@@ -26,16 +26,19 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np, pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)  # the machine's own llm/ package lives at the repository root
+sys.path.insert(0, ROOT)  # the llm/ package lives at the repository root
 try:
-    from llm import chat_result, batch_result  # noqa: E402
+    from llm import chat_result, batch_result, UsageTracker  # noqa: E402
 except ImportError as _e:  # evaluate.py needs no model; any call without the package fails loudly
-    _MISSING = f"no usable llm/ package at {ROOT} ({_e}); see README"
+    _MISSING = f"cannot import the llm/ package at {ROOT} ({_e}); see README"
 
     def chat_result(*a, **k):
         raise Abort(_MISSING)
 
     batch_result = chat_result
+
+    class UsageTracker:  # noqa: D101
+        pass
 
 RUN = os.environ.get("WGC_RUN", "gpt")
 OUT = f"{ROOT}/results/{RUN}"
@@ -45,9 +48,6 @@ DATASETS = ("hs2", "hanna", "ell", "merlin")
 BUDGET = float(os.environ.get("WGC_BUDGET", "300"))  # a safety stop, not part of any method
 MAX_FAIL = int(os.environ.get("WGC_MAX_FAIL", "30"))
 USE_BATCH = os.environ.get("WGC_BATCH", "0") == "1"
-P_IN = float(os.environ.get("EVO_TOKEN_INPUT_PRICE_PER_1M", "0")) / 1e6
-P_OUT = float(os.environ.get("EVO_TOKEN_OUTPUT_PRICE_PER_1M", "0")) / 1e6
-P_CACHED = float(os.environ.get("EVO_TOKEN_CACHED_INPUT_RATIO", "1"))
 # errors a retry cannot fix (bad / disabled key, no credit, moderation, misconfiguration): stop everything at once
 FATAL = re.compile(r"\b(401|402|403)\b|unauthori[sz]ed|forbidden|token_disabled|disabled|banned|insufficient|quota|"
                    r"missing|unknown provider|not configured|invalid api key|api key|绕过|封", re.I)
@@ -92,13 +92,12 @@ def _key(model, temperature, max_tokens, messages):
 
 
 def _usage(res):
-    """LLMResult -> (in_tok, out_tok, cost); (None, None, 0.0) when the provider reported no usage."""
-    u = res.usage
-    if u is None:
+    """LLMResult -> (in_tok, out_tok, cost) priced by llm.UsageTracker (EVO_TOKEN_* prices);
+    (None, None, 0.0) when the provider reported no usage."""
+    t = UsageTracker()
+    if not t.add(res):
         return None, None, 0.0
-    it, ot = u.input_tokens or 0, u.output_tokens or 0
-    cached = getattr(u, "cache_read_tokens", 0) or 0
-    return it, ot, (it - cached) * P_IN + cached * P_IN * P_CACHED + ot * P_OUT
+    return res.usage.input_tokens, res.usage.output_tokens, t.cost
 
 
 def _record(model, k, cache, txt, it, ot, c):

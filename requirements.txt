@@ -8,4 +8,6 @@ dspy==3.4.1
 optuna==5.0.0          # MIPROv2
 absl-py==2.5.1         # OPRO
 immutabledict==4.3.1   # OPRO
-# plus whatever your own llm/ package needs (e.g. litellm)
+
+pytest                 # llm/tests
+# litellm              # only for providers with "type": "litellm"

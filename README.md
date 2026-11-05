@@ -1,8 +1,9 @@
 # WGC baselines：基于 `llm` 包的版本（用于跑 GPT 主表）
 
-这是 "Decode the Shared Axes, Prompt the Content" 主表实验代码的一个自包含版本。所有模型调用都经过本机的
-`llm` 包（`llm-v12` transport contract），代码里不出现任何 provider 名、endpoint 或 key。用哪个模型，完全由
-`llm/providers.json` 决定。
+这是 "Decode the Shared Axes, Prompt the Content" 主表实验代码的一个自包含版本。所有模型调用都经过仓库根目录的
+`llm/` 包（`llm-v12`，说明见 `llm/README.md`）。`llm/` 之外的代码不出现任何 provider 名、endpoint 或 key，用哪个模型
+完全由 `llm/providers.json` 决定。换到 SafeChain 机器时，只需要改 `llm/providers.json` 和对应的环境变量，并在
+`llm/adapters/` 中放入它的 transport，其余文件一个字节都不用改。
 
 - judge 和 optimizer 用同一个模型（和 Gemma 主表一致）。
 - 方法：v0、few-shot、DSPy zero-shot、OPRO（官方代码）、TextGrad CCC / Single-Task（官方 `textgrad`）、
@@ -10,14 +11,18 @@
 - 每个方法都把 judge 在 fit / sel / test 上的打分存下来，`evaluate.py` 用同一套流程报告 raw 和
   readout（decoder）的 test Spearman，外加 isotonic 和 length-debias 两个 post-hoc baseline。
 
-和旧版 `baselines/`（OpenRouter / juapi）相比，只有 `baselines/gem.py` 里的调用层换了。各方法的 runner、超参数和
+和旧版 `baselines/`（OpenRouter / juapi）相比，只换了调用层（新增 `llm/`，`baselines/gem.py` 改为调用它）。各方法的 runner、超参数和
 评测逻辑都没变。旧代码备份在 `../backup/code_2026-11-05_before_llm_contract/`。
 
 ## 目录结构
 
 ```
 wgc_gpt/
-├── llm/                  ← 本机自己提供（不在本目录里，见下文），放在这里
+├── llm/                  模型边界（llm-v12）：所有模型调用都经过这里
+│   ├── providers.json    唯一的配置：provider、模型、参数（不含 secret）
+│   ├── client.py registry.py types.py usage.py adapters/   实现（外部只用 `from llm import ...`）
+│   ├── examples_terminal.py   provider 冒烟测试（真实调用）
+│   └── tests/            单元测试（不调用 provider）
 ├── .env                  ← provider 的 key（llm 包自己读取），不要提交
 ├── data/                 ← 4 个数据集，已经切分好，直接可用
 │   ├── hs2/  hanna/  ell/  merlin/
@@ -60,36 +65,42 @@ python -m venv .venv && . .venv/bin/activate      # Python 3.12（3.10+ 应该�
 pip install -r requirements.txt
 ```
 
-## 2. 放入本机的 `llm/` 包
+## 2. 配置 `llm/`
 
-把本机符合 `llm-v12` contract 的 `llm/` 目录放到 `wgc_gpt/llm/`（复制或软链接都行），例如：
+`llm/providers.json` 是唯一的配置，已经写好了以下几个 provider：
+
+| provider | transport | 说明 |
+|---|---|---|
+| `gpt`（default） | `openai_compatible` | `https://api.openai.com/v1`，`gpt-5.6-luna`，key 取自 `OPENAI_API_KEY`，`reasoning_effort: none` |
+| `gpt_batch` | `openai_compatible` + `native_batch` | 同上，但 `batch_result` 走 OpenAI Batch API（更便宜，延迟最长 24h） |
+| `deepseek` | `litellm` | 示例，`enabled: false` |
+| `safechain` | `adapter: safechain` | SafeChain 机器的占位，`enabled: false`；在那台机器上放入 `llm/adapters/safechain.py` 并启用 |
+
+- 换模型或 endpoint：改 `model` 和 `base_url`。其他 OpenAI 形状的 host 也可以直接用 `openai_compatible`。
+- 模型参数（max_tokens、reasoning 等）写在 `params` 里。调用时传入的 sampling 选项会覆盖它；本代码只传 `temperature`。
+- 切换 provider 只有两种方式：改 `default`，或者设置环境变量 `LLM_PROVIDER`（`EAX_PROVIDER` 优先）。
+- key 放在仓库根目录的 `.env`（例如 `OPENAI_API_KEY=...`）或环境变量里，`providers.json` 里不放 secret。
+
+检查和测试：
 
 ```bash
-ln -s /path/to/your/repo/llm  llm
+python -m pytest llm/tests                   # 单元测试，不调用 provider
+set -a; . ./.env; set +a
+python llm/examples_terminal.py              # 列出 provider 是否可用，并做 4 次真实调用，打印内容和 usage
 ```
 
-本代码只用到 contract 的公开 API：
-
-- `from llm import chat_result, batch_result`；
-- 读取 `LLMResult.content` 和 `LLMResult.usage`（`input_tokens`、`output_tokens`、`cache_read_tokens`）。
-
-第一个参数始终传 `None`，也就是用配置的默认 provider。切换 provider 只能用 contract 规定的两种方式：
-
-1. 改 `llm/providers.json` 的 `default`；
-2. 设置环境变量 `LLM_PROVIDER`（或 `EAX_PROVIDER`）。
-
 **模型参数**：本代码只传 `temperature`：judge 用 0，各优化器用各自的官方温度（TextGrad 的 loss / gradient / optimizer
-分别是 0.3 / 0.3 / 0.7，OPRO 和 DSPy 的 optimizer 是 1.0）。其余参数（max_tokens、reasoning 等）全部由 `llm` 包
-（`providers.json` 的 `params`）决定。temperature 0 的调用会被缓存。
+分别是 0.3 / 0.3 / 0.7，OPRO 和 DSPy 的 optimizer 是 1.0）。其余参数全部由 `providers.json` 的 `params` 决定。
+temperature 0 的调用会被缓存。
 
 ## 3. 环境变量
 
 | 变量 | 作用 | 默认 |
 |---|---|---|
 | `WGC_RUN` | 运行名，输出到 `results/<WGC_RUN>/`；**一个模型用一个名字**（例如 `gpt-5.6-luna`） | `gpt` |
-| `EVO_TOKEN_INPUT_PRICE_PER_1M` / `EVO_TOKEN_OUTPUT_PRICE_PER_1M` / `EVO_TOKEN_CACHED_INPUT_RATIO` | 每百万 token 价格（contract 同名变量），用于花费日志和预算保护 | 0 / 0 / 1 |
+| `EVO_TOKEN_INPUT_PRICE_PER_1M` / `EVO_TOKEN_OUTPUT_PRICE_PER_1M` / `EVO_TOKEN_CACHED_INPUT_RATIO` | 每百万 token 价格，由 `llm.UsageTracker` 计价，用于花费日志和预算保护 | 0 / 0 / 1 |
 | `WGC_BUDGET` | 整个 run 的记录花费超过这个美元数就停止所有任务（需要先设置价格） | 300 |
-| `WGC_BATCH` | `1` = 最终评测（fit/sel/test 全量打分）走 `llm.batch_result`，provider 有原生 batch endpoint 时使用它（通常更便宜，但延迟更高） | 0 |
+| `WGC_BATCH` | `1` = 最终评测（fit/sel/test 全量打分）走 `llm.batch_result`。配合 `LLM_PROVIDER=gpt_batch` 时使用 OpenAI Batch API（更便宜、延迟更高）；配合普通 provider 时是并行调用 | 0 |
 | `WGC_MAX_FAIL` | 所有线程合计连续失败这么多次后，停止所有任务 | 30 |
 
 provider 的 key 放在 `.env` 或环境变量里，由 `llm` 包自己读取。本代码不读、也不打印 key。
@@ -107,8 +118,8 @@ export EVO_TOKEN_INPUT_PRICE_PER_1M=<输入价>  EVO_TOKEN_OUTPUT_PRICE_PER_1M=<
 python baselines/smoke.py hanna
 ```
 
-最后一行应为 `OK`，也就是 judge 输出全部解析成功，并且能看到 token usage。如果出现 `CHECK`，说明 judge 的输出没有以
-JSON 结尾，先检查 llm 的配置。
+`smoke.py` 测的是整条链路（llm → judge → 分数解析）。最后一行应为 `OK`，也就是 judge 输出全部解析成功，并且能看到
+token usage。如果出现 `CHECK`，说明 judge 的输出没有以 JSON 结尾，先检查 `providers.json` 的 `params`。
 
 ## 5. 先跑小规模 pilot（建议）
 
@@ -163,7 +174,7 @@ python baselines/evaluate.py                 # 4 个数据集；也可以写 pyt
 - `isotonic`、`own_len`：两个 post-hoc baseline；
 - `sd_*`：跨 seed 的标准差；`n`：seed 数。
 
-`evaluate.py` 不调用模型，没有 `llm/` 也能运行。
+`evaluate.py` 不调用模型，不需要 key。
 
 ## 8. 开销参考
 
@@ -173,7 +184,8 @@ Gemma 4 26B 跑完整张表（含重跑，偏上限），总量约为：
 - 大头是 TextGrad Single-Task（约 40%）和 OPRO（约 20%），其次是 MIPROv2 和 TextGrad CCC；
 - v0、zero-shot 和 few-shot 很便宜。
 
-如果 GPT 的输出更长（例如 llm 里开了 reasoning），输出 token 会明显增加。最终评测加上 `WGC_BATCH=1` 可以用 batch 价格。
+如果 GPT 的输出更长（例如 llm 里开了 reasoning），输出 token 会明显增加。全程设 `WGC_BATCH=1 LLM_PROVIDER=gpt_batch`，最终评测（每个任务 fit/sel/test 各一个 batch）就能用 batch 价格。优化过程中的
+单次调用（`chat_result`）在 `gpt_batch` 下照常是普通实时调用，所以整张表可以直接这样跑，只是每个任务结尾要等 batch 完成。
 建议先按第 5 步跑 pilot，用 `gem.spent()` 实测之后再估算全量开销。
 
 ## 输出文件

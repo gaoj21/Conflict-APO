@@ -1,5 +1,5 @@
-/llm/
 .env
 results/
 __pycache__/
 .venv/
+.pytest_cache/
