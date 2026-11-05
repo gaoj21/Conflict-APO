@@ -136,4 +136,5 @@ else:
     for s in ("fit", "sel", "test"):  # one call per attribute: attribute k is read from prompt k
         cols = {x: judge(finals[x], ds.rows[s]).set_index("id")[x] for x in ds.A}
         gem.save_scores(ds, METHOD, a.seed, s, pd.DataFrame(cols).reset_index().rename(columns={"index": "id"}))
+gem.save_usage(OUTD)
 print(a.ds, METHOD, a.seed, "done")

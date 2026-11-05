@@ -111,4 +111,5 @@ for s in ("fit", "sel", "test"):
     if bad > 0.2:
         raise gem.Abort(f"{METHOD} {s}: {bad:.0%} unparsed")
     gem.save_scores(ds, METHOD, a.seed, s, df)
+gem.save_usage(OUTD)
 print(a.ds, METHOD, a.seed, "done")
