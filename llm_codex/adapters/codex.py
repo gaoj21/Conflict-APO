@@ -12,7 +12,11 @@ Provider keys (llm/providers.json):
   "model": "<codex model>"                 optional; default: the model in ~/.codex/config.toml
   "codex_bin": "codex"                     optional; path of the codex executable (env CODEX_BIN overrides)
   "codex_config": {"model_reasoning_effort": "low"}   optional; each entry becomes `-c key=value`
+  "codex_disable": [...]                   optional; Codex features to turn off (default: DISABLE below, i.e. all tools)
   "params": {"timeout": 300}               seconds per call
+Like `claude -p --tools "" --setting-sources ""`: every tool Codex can turn off is off (shell, exec, images,
+multi-agent, apps, plugins, goals, web search, ...; only request_user_input remains), and ~/.codex/config.toml is
+ignored (--ignore-user-config; the login still comes from ~/.codex).
 Sampling options other than `timeout` (temperature, top_p, max_tokens, stop, seed) cannot be passed to Codex and are
 ignored. Codex always adds a short sandbox / environment preamble of its own (a few hundred tokens per call).
 """
@@ -23,6 +27,8 @@ from ..types import LLMResult, LLMUsage
 
 PREAMBLE = ("You are used as a plain text-completion endpoint. Answer the user's message directly in your reply. "
             "Never run commands, read or write files, or call any tool.")
+DISABLE = ["shell_tool", "unified_exec", "view_image", "image_generation", "multi_agent", "apps", "plugins", "goals",
+           "sleep_tool", "tool_suggest", "skill_search", "browser_use", "computer_use", "hooks", "in_app_browser"]
 _RETRY = re.compile(r"\b429\b|rate.?limit|too many requests|\b5\d\d\b|overloaded|stream (disconnected|error)|"
                     r"connection (reset|refused|error)|timed? ?out", re.I)
 
@@ -79,8 +85,11 @@ def complete(p, messages, opts):
         instr, last = os.path.join(work, "instructions.md"), os.path.join(work, "last_message.txt")
         with open(instr, "w", encoding="utf-8") as f:
             f.write(PREAMBLE + ("\n\n" + system if system else ""))
-        cmd = [_bin(p), "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only",
-               "--color", "never", "-C", work, "-o", last, "-c", f"model_instructions_file={json.dumps(instr)}"]
+        cmd = [_bin(p), "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config",
+               "--sandbox", "read-only", "--color", "never", "-C", work, "-o", last,
+               "-c", f"model_instructions_file={json.dumps(instr)}", "-c", 'web_search="disabled"']
+        for feat in p.extra.get("codex_disable", DISABLE):
+            cmd += ["--disable", feat]
         if p.model:
             cmd += ["-m", p.model]
         for k, v in (p.extra.get("codex_config") or {}).items():

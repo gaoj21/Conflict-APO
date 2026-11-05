@@ -228,6 +228,8 @@ def test_codex_adapter(cfg, fake_codex):
     a = call["args"]
     assert a[0] == "exec" and "--json" in a and "--ephemeral" in a and a[a.index("--sandbox") + 1] == "read-only"
     assert a[a.index("-m") + 1] == "gpt-x" and 'model_reasoning_effort="low"' in a and a[-1] == "-"
+    assert "--ignore-user-config" in a and 'web_search="disabled"' in a
+    assert {"shell_tool", "unified_exec", "multi_agent"} <= {a[i + 1] for i, x in enumerate(a) if x == "--disable"}
     assert llm.batch(None, [[{"role": "user", "content": str(i)}] for i in range(5)]) == [f"echo:{i}" for i in range(5)]
 
 
