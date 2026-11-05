@@ -28,7 +28,8 @@ from ..types import LLMResult, LLMUsage
 PREAMBLE = ("You are used as a plain text-completion endpoint. Answer the user's message directly in your reply. "
             "Never run commands, read or write files, or call any tool.")
 DISABLE = ["shell_tool", "unified_exec", "view_image", "image_generation", "multi_agent", "apps", "plugins", "goals",
-           "sleep_tool", "tool_suggest", "skill_search", "browser_use", "computer_use", "hooks", "in_app_browser"]
+           "sleep_tool", "tool_suggest", "skill_search", "browser_use", "computer_use", "hooks", "in_app_browser",
+           "shell_snapshot"]  # shell_snapshot starts the user's login shell (.zshrc, conda init, ...) on every call
 _RETRY = re.compile(r"\b429\b|rate.?limit|too many requests|\b5\d\d\b|overloaded|stream (disconnected|error)|"
                     r"connection (reset|refused|error)|timed? ?out", re.I)
 
