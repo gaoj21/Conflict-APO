@@ -18,7 +18,7 @@ have() { [ -f $OUT/$1/$2/seed0/scores_test.csv ]; }
 rounds() { d=$1
   have $d textgrad_ccc_shadrules || $PY baselines/run_textgrad.py $d ccc --seed 0 --shadrules --name textgrad_ccc_shadrules \
                                      --workers $W > $L/${d}_tg_shadrules.log 2>&1
-  echo "$d rounds done $(date)"; }
+  :; }
 
 # arm O (+ references): v0, plain TextGrad CCC, then ShAD rules added once to its final prompt
 control() { d=$1
@@ -29,13 +29,19 @@ control() { d=$1
   if [ "${WITH_MIPRO:-0}" = 1 ]; then   # optional reference: the strongest APO baseline, raw vs + ShAD decoder
     have $d dspy_mipro || $PY baselines/run_dspy.py $d mipro --workers $W > $L/${d}_dspy_mipro.log 2>&1
   fi
-  echo "$d control done $(date)"; }
+  :; }
 
 # step 0 (per dataset): v0 judge on all items, then drop the items that failed (API error or unparsable rating)
 screen() { d=$1
   have $d v0 || $PY baselines/run_simple.py $d v0 --workers $W > $L/${d}_v0.log 2>&1
-  $PY scripts/screen_items.py $d | tee -a $L/screen.txt; }
+  $PY scripts/screen_items.py $d >> $L/screen.txt 2>&1; }
 
-for d in $DS; do ( screen $d; rounds $d & control $d & wait ) & done; wait
-$PY scripts/final_report.py $DS | tee $L/final_report.txt
-echo PIPELINE_DONE
+rm -f $L/PIPELINE_DONE
+for d in $DS; do ( screen $d; rounds $d & control $d & wait ) > /dev/null 2>&1 & done
+# the terminal only shows a compact progress table (refreshed every 30 s); everything else goes to $L/*.log
+[ "${QUIET:-0}" = 1 ] || $PY scripts/progress.py --watch ${REFRESH:-30} $DS &
+wait $(jobs -p | head -n $(echo $DS | wc -w))
+touch $L/PIPELINE_DONE; sleep 1
+$PY scripts/final_report.py $DS > $L/final_report.txt 2>&1
+clear 2>/dev/null; $PY scripts/progress.py $DS; echo; cat $L/final_report.txt
+echo "PIPELINE_DONE  (full table: $L/final_report.txt; dropped items: $L/screen.txt)"

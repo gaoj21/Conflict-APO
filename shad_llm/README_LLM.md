@@ -38,6 +38,10 @@ bash run_pipeline_llm.sh ell                               # one dataset
 WITH_MIPRO=1 bash run_pipeline_llm.sh                      # also the DSPy MIPROv2 reference
 ```
 
+The terminal shows only a progress table, refreshed every 30 s (`REFRESH=60` to change, `QUIET=1` to turn it off);
+all details go to `$GEM_OUT/logs/*.log`. To check progress from another terminal: `python scripts/progress.py`.
+At the end the script prints the final table (also in `$GEM_OUT/logs/final_report.txt`).
+
 Environment variables: `GEM_PROVIDER=llm` (set by the script), `GEM_LLM_PROVIDER`, `GEM_LLM_PATH` (where `llm/` is,
 default this directory), `GEM_MODEL` (a label for logs and the call cache; default the provider name), `GEM_OUT`
 (results; default `results/llm_<label>`), `GEM_BUDGET` (off by default for this provider; token counts are logged in
