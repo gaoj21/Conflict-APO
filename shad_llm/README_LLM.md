@@ -94,5 +94,5 @@ pipeline is roughly 30-40k calls per dataset.
 
 ## 5. Data
 
-`results/claude_{hs2,ell,merlin}/`: attributes, output format, rubric v0 (`prompts/v0.txt`), gold human ratings
+`data/claude_{hs2,ell,merlin}/`: attributes, output format, rubric v0 (`prompts/v0.txt`), gold human ratings
 (`gold.csv`, with the standardized log length `z`), and fit / sel / test items (`chunks/`).

@@ -9,7 +9,10 @@ export GEM_PROVIDER=llm
 PY=${PY:-python}
 DS=${*:-"hs2 ell merlin"}
 W=${WORKERS:-16}
-OUT=${GEM_OUT:-$($PY -c "import sys; sys.path.insert(0,'baselines'); import gem; print(gem.OUT)")}
+# preflight: the llm package must import and answer one call, otherwise stop here with the error
+if ! OUT=$(PREFLIGHT_DS="$DS" $PY scripts/preflight.py); then
+  echo "PREFLIGHT FAILED: fix the error above, then rerun."; exit 1
+fi
 export GEM_OUT=$OUT
 L=$OUT/logs; mkdir -p $L
 have() { [ -f $OUT/$1/$2/seed0/scores_test.csv ]; }
@@ -37,7 +40,7 @@ screen() { d=$1
   $PY scripts/screen_items.py $d >> $L/screen.txt 2>&1; }
 
 rm -f $L/PIPELINE_DONE
-for d in $DS; do ( screen $d; rounds $d & control $d & wait ) > /dev/null 2>&1 & done
+for d in $DS; do ( screen $d; rounds $d & control $d & wait ) >> $L/pipeline_$d.err 2>&1 & done
 # the terminal only shows a compact progress table (refreshed every 30 s); everything else goes to $L/*.log
 [ "${QUIET:-0}" = 1 ] || $PY scripts/progress.py --watch ${REFRESH:-30} $DS &
 wait $(jobs -p | head -n $(echo $DS | wc -w))

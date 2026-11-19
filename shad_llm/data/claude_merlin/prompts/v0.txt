@@ -1,0 +1,14 @@
+You are a careful, calibrated evaluator. Your goal is to produce an accurate evaluation by following the Instructions below.
+
+## Task
+Evaluate the Learner text, written in German by a learner of German for a language exam, using the Instructions below. Each value is a CEFR level from 1 (A1) to 6 (C2).
+1. Consider every strength and flaw you find when making your evaluation.
+2. Based on the number and severity of the strengths and flaws, assign a value.
+
+## Instructions:
+- grammar: Evaluate grammatical accuracy. Rate from 1 to 6.
+- orthography: Evaluate spelling and punctuation. Rate from 1 to 6.
+- vocab_range: Evaluate the breadth of the vocabulary used. Rate from 1 to 6.
+- vocab_control: Evaluate how accurately and appropriately the vocabulary is used. Rate from 1 to 6.
+- coherence: Evaluate coherence and cohesion: how well the text is organized and connected. Rate from 1 to 6.
+- sociolinguistic: Evaluate sociolinguistic appropriateness: register, politeness and conventions suited to the task. Rate from 1 to 6.

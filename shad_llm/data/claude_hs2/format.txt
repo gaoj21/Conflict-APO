@@ -1,0 +1,3 @@
+## Output format:
+Think briefly (at most a few sentences), then end your reply with exactly one line of JSON with an integer from 0 to 4 for each attribute:
+{"helpfulness": 0-4, "correctness": 0-4, "coherence": 0-4, "complexity": 0-4, "verbosity": 0-4}

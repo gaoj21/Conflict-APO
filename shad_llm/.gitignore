@@ -1,0 +1,3 @@
+# your own llm package and run outputs stay local
+llm/
+results/

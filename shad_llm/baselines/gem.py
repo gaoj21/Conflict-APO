@@ -27,7 +27,12 @@ elif PROVIDER == "llm":
     # found at the repository root or under GEM_LLM_PATH. Which model and endpoint are used is decided by
     # llm/providers.json; GEM_LLM_PROVIDER picks a provider by name (default: the configured default provider).
     import sys as _sys
-    _sys.path.insert(0, os.environ.get("GEM_LLM_PATH", ROOT))
+    _cands = [os.environ.get("GEM_LLM_PATH"), ROOT, os.path.dirname(ROOT)]  # this package, then the repo above it
+    _where = next((c for c in _cands if c and os.path.isdir(os.path.join(c, "llm"))), None)
+    if _where is None:
+        raise ImportError("GEM_PROVIDER=llm but no `llm` package found in " + ", ".join(c for c in _cands if c)
+                          + ". Copy your llm package there (cp -r /path/to/llm .) or set GEM_LLM_PATH to the folder that contains it.")
+    _sys.path.insert(0, _where)
     from llm import chat_result as _llm_chat_result, ProviderError as _LLMError  # noqa: E402
     LLM_PROVIDER = os.environ.get("GEM_LLM_PROVIDER") or None
     JUDGE = os.environ.get("GEM_MODEL", LLM_PROVIDER or "llm-default")  # a label only (cache key, logs)
@@ -208,7 +213,10 @@ class DS:
     """One dataset: attributes, output format, initial prompt v0, gold scores and the fit / sel / test items."""
 
     def __init__(self, name):
-        self.name, self.R = name, f"{ROOT}/results/{DATASETS[name]}"
+        # the dataset files live in data/<dir> (standalone package) or results/<dir> (original repository)
+        self.name = name
+        self.R = next((p for p in (f"{ROOT}/data/{DATASETS[name]}", f"{ROOT}/results/{DATASETS[name]}") if os.path.isdir(p)),
+                      f"{ROOT}/results/{DATASETS[name]}")
         self.A = open(f"{self.R}/attrs.txt").read().split()
         self.FORMAT = open(f"{self.R}/format.txt").read().strip()
         self.LO, self.HI = map(int, re.search(r"integer from (\d+) to (\d+)", self.FORMAT).groups())

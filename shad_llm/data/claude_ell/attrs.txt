@@ -1,0 +1,6 @@
+cohesion
+syntax
+vocabulary
+phraseology
+grammar
+conventions
