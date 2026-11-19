@@ -61,6 +61,10 @@ class Abort(Exception):
     pass
 
 
+class ItemFailed(Exception):
+    """One call failed for this item only (e.g. the API refused its content): the item is dropped, the run goes on."""
+
+
 def _key():
     global _KEY
     if PROVIDER == "local":
@@ -103,7 +107,10 @@ def chat(messages, model=JUDGE, temperature=0.0, max_tokens=2000, cache=None):
         try:
             res = _llm_chat_result(LLM_PROVIDER, messages, temperature=temperature, max_tokens=max_tokens)
         except _LLMError as e:
-            raise Abort(f"llm package: {str(e)[:300]}")
+            msg = str(e)
+            if re.search(r"401|403|unauthori|forbidden|quota|insufficient|billing|api[_ ]?key", msg, re.I):
+                raise Abort(f"llm package: {msg[:300]}")  # account-level problem: stop everything
+            raise ItemFailed(msg[:300])  # anything else (e.g. content refused): drop this item
         txt = res.content or ""
         u = res.usage
         it, ot = (u.input_tokens, u.output_tokens) if u is not None else (0, 0)
@@ -213,6 +220,24 @@ class DS:
         self.rows = {s: [json.loads(l) for f in sorted(os.listdir(f"{self.R}/chunks")) if f.startswith(s + "_")
                          for l in open(f"{self.R}/chunks/{f}")] for s in ("fit", "sel", "test")}
         self.text = {r["id"]: r["user"] for s in self.rows for r in self.rows[s]}
+        # items that failed (API error, or no parsable rating from the v0 judge) are dropped from every split, for
+        # every method that starts after they were recorded (scripts/screen_items.py, judge_msgs)
+        self.excl_file = f"{OUT}/{name}/excluded_ids.txt"
+        self.excluded = set(open(self.excl_file).read().split()) if os.path.exists(self.excl_file) else set()
+        self.rows = {s: [r for r in v if r["id"] not in self.excluded] for s, v in self.rows.items()}
+
+    def exclude(self, ids):
+        new = set(ids) - self.excluded
+        if new:
+            with _LOCK:
+                os.makedirs(os.path.dirname(self.excl_file), exist_ok=True)
+                with open(self.excl_file, "a") as f:
+                    f.write("".join(i + "\n" for i in sorted(new)))
+            self.excluded |= new
+
+    def keep(self, df):
+        """Drop excluded items from a score table (id column)."""
+        return df[~df.id.isin(self.excluded)].reset_index(drop=True)
 
     def out(self, method, seed=0):
         d = f"{OUT}/{self.name}/{method}/seed{seed}"
@@ -242,6 +267,9 @@ class DS:
                 txt, it, ot, c = chat(make(r))
             except Abort:
                 raise
+            except ItemFailed as e:
+                self.exclude([r["id"]])
+                return dict(id=r["id"], error="ITEM_FAILED " + str(e)[:200])
             except Exception as e:  # noqa: BLE001
                 return dict(id=r["id"], error=str(e)[:200])
             sc = parse_scores(txt)
@@ -252,7 +280,8 @@ class DS:
         for a in self.A:
             if a not in df:
                 df[a] = np.nan
-        bad = df[self.A].isna().any(axis=1).mean()
+        failed = df["error"].astype(str).str.startswith("ITEM_FAILED") if "error" in df else pd.Series(False, index=df.index)
+        bad = df.loc[~failed, self.A].isna().any(axis=1).mean() if (~failed).any() else 0.0  # dropped items do not count
         if strict and bad > 0.2:  # outage / refusal / moderation: stop rather than optimize on garbage
             raise Abort(f"{self.name}: {bad:.0%} of {len(df)} judge calls unparsed, e.g. "
                         f"{df.get('error', df.get('reason')).dropna().astype(str).iloc[0][:200] if len(df) else ''}")

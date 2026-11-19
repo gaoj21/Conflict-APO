@@ -69,6 +69,12 @@ word count shown with each item, half points allowed):
 **Conflicts**: per attribute, the change of Spearman vs "TextGrad + format"; an attribute is up / down when the change
 exceeds two paired-bootstrap SE; a conflict is at least one up and one down.
 
+**Failed items are dropped.** Step 0 judges every item with v0; any item whose call fails (e.g. the API refuses
+its content) or whose ratings cannot be parsed is written to `$GEM_OUT/<ds>/excluded_ids.txt`
+(`scripts/screen_items.py`). All later steps skip these items and all evaluations ignore them, so every arm is compared
+on the same items. An item that fails later is dropped the same way; account-level errors (key, quota, billing) stop
+the run. `$GEM_OUT/logs/screen.txt` reports how many items were dropped per dataset.
+
 **Data roles.** fit + sel: ShAD fitting, rule generation, TextGrad's training and validation; sel: choice among rule
 candidates; test: final evaluation only.
 

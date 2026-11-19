@@ -22,7 +22,6 @@ rounds() { d=$1
 
 # arm O (+ references): v0, plain TextGrad CCC, then ShAD rules added once to its final prompt
 control() { d=$1
-  have $d v0           || $PY baselines/run_simple.py   $d v0  --workers $W > $L/${d}_v0.log 2>&1
   have $d textgrad_ccc || $PY baselines/run_textgrad.py $d ccc --seed 0 --workers $W > $L/${d}_textgrad_ccc.log 2>&1
   [ -f $OUT/$d/postrules_textgrad_ccc/seed0/result.json ]     || $PY baselines/run_postrules.py $d textgrad_ccc --workers $W > $L/${d}_postrules_textgrad_ccc.log 2>&1
   [ -f $OUT/$d/llmrules_textgrad_ccc/seed0/result.json ]      || $PY baselines/run_llmrules.py  $d textgrad_ccc --workers $W > $L/${d}_llmrules_textgrad_ccc.log 2>&1
@@ -32,6 +31,11 @@ control() { d=$1
   fi
   echo "$d control done $(date)"; }
 
-for d in $DS; do rounds $d & control $d & done; wait
+# step 0 (per dataset): v0 judge on all items, then drop the items that failed (API error or unparsable rating)
+screen() { d=$1
+  have $d v0 || $PY baselines/run_simple.py $d v0 --workers $W > $L/${d}_v0.log 2>&1
+  $PY scripts/screen_items.py $d | tee -a $L/screen.txt; }
+
+for d in $DS; do ( screen $d; rounds $d & control $d & wait ) & done; wait
 $PY scripts/final_report.py $DS | tee $L/final_report.txt
 echo PIPELINE_DONE

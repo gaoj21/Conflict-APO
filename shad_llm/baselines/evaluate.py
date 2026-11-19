@@ -40,7 +40,7 @@ def anchored_fit(X, Y, folds=5):
 
 
 def load(ds, d):
-    S = {s: pd.read_csv(f"{d}/scores_{s}.csv") for s in ("fit", "sel", "test")}
+    S = {s: ds.keep(pd.read_csv(f"{d}/scores_{s}.csv")) for s in ("fit", "sel", "test")}  # excluded items dropped
     tr = pd.concat([S["fit"], S["sel"]], ignore_index=True)
     return tr, S["test"]
 

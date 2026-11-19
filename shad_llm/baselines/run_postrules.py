@@ -39,7 +39,7 @@ else:
     prompt = open(f"{src}/final_prompt.txt").read().strip()
 
 # ShAD on the final prompt's own fit + sel scores
-tr = pd.concat([pd.read_csv(f"{src}/scores_{s}.csv") for s in ("fit", "sel")], ignore_index=True)
+tr = ds.keep(pd.concat([pd.read_csv(f"{src}/scores_{s}.csv") for s in ("fit", "sel")], ignore_index=True))
 X = tr[A].to_numpy(float); X = np.where(np.isnan(X), np.nanmean(X, 0), X)
 z = ds.gold.loc[tr.id, "z"].to_numpy(float); zs = (z - z.mean()) / z.std()
 F = np.c_[(X - X.mean(0)) / np.where(X.std(0) > 0, X.std(0), 1), zs]
