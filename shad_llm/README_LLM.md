@@ -35,7 +35,7 @@ export GEM_LLM_PROVIDER=<provider name in providers.json>   # optional; default 
 export WORKERS=16                                          # concurrent requests per process (3 datasets run in parallel)
 bash run_pipeline_llm.sh                                   # hs2 ell merlin
 bash run_pipeline_llm.sh ell                               # one dataset
-WITH_SLOW=1 bash run_pipeline_llm.sh                       # also GEPA and OPRO baselines
+WITH_MIPRO=1 bash run_pipeline_llm.sh                      # also the DSPy MIPROv2 reference
 ```
 
 Environment variables: `GEM_PROVIDER=llm` (set by the script), `GEM_LLM_PROVIDER`, `GEM_LLM_PATH` (where `llm/` is,
@@ -43,19 +43,44 @@ default this directory), `GEM_MODEL` (a label for logs and the call cache; defau
 (results; default `results/llm_<label>`), `GEM_BUDGET` (off by default for this provider; token counts are logged in
 `$GEM_OUT/cache.sqlite`, table `spend`). Judge calls at temperature 0 are cached, so the script is resumable.
 
-## 4. What it runs (per dataset, datasets in parallel)
+## 4. Experiment design
 
-1. Baselines: v0, few-shot, DSPy zero-shot, DSPy MIPROv2, TextGrad CCC (judge = optimizer = your model);
-   with `WITH_SLOW=1` also GEPA and OPRO.
-2. Key experiment (`run_distill_cmp.py`): TextGrad's final prompt frozen; teacher = ShAD cross-fitted on fit only;
-   rules written by the LLM from (a) ShAD's coefficients, (b) teacher contrastive pairs, (c) human-error contrastive
-   pairs (baseline); 3 candidates each, selected on sel by a conservative paired-bootstrap score; test once.
-3. ShAD into the final prompt: numeric length rules (`run_postrules.py`), LLM text rules and combined
-   (`run_llmrules.py [--combine]`), on v0 and TextGrad's final prompt.
-4. Summaries in `$GEM_OUT/logs/`: `main_table.txt` (raw vs + ShAD decoder for every method), `key_experiment.txt`,
-   `rules_summary.txt`. Metric: test Spearman, mean over attributes.
+**Question.** Multi-attribute judges tuned by APO show conflicts (an edit helps one attribute and hurts another). ShAD
+(a per-attribute ridge decoder over all judge scores + log length, anchored to the attribute's own score) shows that
+most of this comes from axes shared by all attributes. Can ShAD's corrections be written into the prompt, so the judge
+improves **without conflicts and without a decoder at inference**? And is it better to add them once after APO, or
+round by round during APO?
 
-Rough size: 40–60k calls per dataset without GEPA/OPRO; judge outputs are ~100–250 tokens.
+**Arms** (judge = optimizer = your model; seed 0; TextGrad CCC as the APO method; same format for every rule arm:
+word count shown with each item, half points allowed):
+
+| arm | what it is |
+|---|---|
+| v0 | the unoptimized rubric (reference) |
+| TextGrad | plain TextGrad CCC, 12 steps (reference) |
+| TextGrad + format | TextGrad's final prompt with the format change only (**control** for every rule arm) |
+| + length rules | ShAD fitted once on the final prompt; its length weights as per-band rating adjustments |
+| + text rules | ShAD's cross-attribute weights described to the LLM, which writes number-free rules (3 candidates, best on sel) |
+| + combined | text rules (cross-attribute only) + length rules |
+| TextGrad x ShAD rounds | after every TextGrad step: refit ShAD on fit+sel, add half of the remaining length correction, rewrite the text rules; keep the update only if val MAE does not increase. The rules sit outside the optimized system prompt, so TextGrad cannot edit them |
+
+**Metrics** (test set, never used for any choice): mean Spearman x100 over attributes of the judge's own ratings
+(**raw**, no decoder); for full prompts also **+ ShAD** (the decoder refitted on that prompt's fit+sel scores).
+**Conflicts**: per attribute, the change of Spearman vs "TextGrad + format"; an attribute is up / down when the change
+exceeds two paired-bootstrap SE; a conflict is at least one up and one down.
+
+**Data roles.** fit + sel: ShAD fitting, rule generation, TextGrad's training and validation; sel: choice among rule
+candidates; test: final evaluation only.
+
+**Reading the result.** The method works if the rule arms raise raw Spearman over "TextGrad + format" with no
+attribute significantly down; the round-by-round arm is worth its cost only if it beats "+ combined".
+
+**Output.** `$GEM_OUT/logs/final_report.txt` (from `scripts/final_report.py`): one table per dataset with raw, + ShAD,
+up / down / conflict and the per-attribute changes. With `WITH_MIPRO=1` also DSPy MIPROv2 (raw vs + ShAD decoder) as a
+stronger APO reference.
+
+**Cost.** The round-by-round arm re-judges fit + sel after every step (~12 x 700-1160 calls per dataset); the whole
+pipeline is roughly 30-40k calls per dataset.
 
 ## 5. Data
 
