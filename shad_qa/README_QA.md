@@ -1,6 +1,6 @@
 # ShAD on QA through your `llm` package (DROP, MuSiQue, HotpotQA)
 
-This folder (branch `shad-qa` of Conflict-APO) runs two ShAD experiments on three QA datasets with your own model:
+This branch (`qa`) runs two ShAD experiments on three QA datasets with your own model:
 
 1. **ShAD alternating with TextGrad** (`tg+edit`): ShAD rules are added round by round, every 3 TextGrad steps.
 2. **ShAD added once at the end** (`+ ShAD edit (1 step)`): ShAD rules are added once to TextGrad's final prompt.
@@ -23,20 +23,10 @@ pip install -r requirements_qa.txt                   # numpy pandas scipy scikit
 
 ## 2. Put your `llm` package next to this file
 
-Run everything from this folder (`shad_qa/`). Either copy your own package here:
-
 ```bash
 cp -r /path/to/your/llm ./llm          # or: export GEM_LLM_PATH=<folder that contains llm/>
+python -c "import llm; print(llm.chat(None, [{'role':'user','content':'Say OK'}]))"
 ```
-
-or start from the template in `llm_template/` (the llm-v12 package used before, same as in `shad_llm/`) and edit
-`llm/providers.json` (the default provider, or pick one with `GEM_LLM_PROVIDER`):
-
-```bash
-cp -r llm_template llm   # then edit llm/providers.json; keys come from the environment variables it names
-```
-
-Check one call: `python -c "import llm; print(llm.chat(None, [{'role':'user','content':'Say OK'}]))"`.
 
 ## 3. Run
 
@@ -338,6 +328,11 @@ earlier QA explorations and are not used by this run.
 
 - **`PREFLIGHT FAILED`.** The `llm` package did not import, or the test call failed. The message above it says which.
 - **`llm package: ... 401/403/quota`.** This is an account-level error. Everything stops; fix it and rerun.
+- **`... returned an empty response`** (e.g. from SafeChain). Every call that comes back empty or with a transient
+  error is retried 4 times (2, 4, 8, 16 s apart); empty replies are never cached. A question still failing after
+  that is scored wrong and the run goes on; a TextGrad step still failing is counted as a revert. The preflight call
+  allows 1000 output tokens, so a reasoning model has room to answer. If many questions fail, check the provider
+  (`grep -c "no-answer"` is not needed: the `pred` column of the answers CSV is empty for them).
 - **Other errors on single questions** (for example, content refused). The question is scored wrong and the run goes
   on. If an error occurs inside a TextGrad step, that process stops. Rerun the command; it resumes from the last saved
   step.

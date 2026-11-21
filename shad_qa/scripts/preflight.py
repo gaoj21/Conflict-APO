@@ -15,7 +15,7 @@ for n in os.environ.get("PREFLIGHT_DS", "hs2 ell merlin").split():
         err(f"[preflight] dataset {n} does not load: {e}"); sys.exit(1)
 t = time.time()
 try:
-    txt, it, ot, _ = gem.chat([dict(role="user", content="Reply with the single word OK.")], temperature=0.0, max_tokens=20, cache=False)
+    txt, it, ot, _ = gem.chat([dict(role="user", content="Reply with the single word OK.")], temperature=0.0, max_tokens=1000, cache=False)  # room for a reasoning model
 except Exception as e:  # noqa: BLE001
     err(f"[preflight] the test call failed: {e}"); sys.exit(1)
 err(f"[preflight] test call OK in {time.time() - t:.1f}s: reply {txt.strip()[:40]!r}, tokens in/out {it}/{ot}")

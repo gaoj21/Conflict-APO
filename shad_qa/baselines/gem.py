@@ -108,14 +108,21 @@ def chat(messages, model=JUDGE, temperature=0.0, max_tokens=2000, cache=None):
             return row[0], row[1], row[2], 0.0
     if spent()[0] > BUDGET:
         raise Abort(f"budget ${BUDGET} reached")
-    if PROVIDER == "llm":  # the llm package does its own retries (429 / 5xx); its errors stop the run
-        try:
-            res = _llm_chat_result(LLM_PROVIDER, messages, temperature=temperature, max_tokens=max_tokens)
-        except _LLMError as e:
-            msg = str(e)
-            if re.search(r"401|403|unauthori|forbidden|quota|insufficient|billing|api[_ ]?key", msg, re.I):
-                raise Abort(f"llm package: {msg[:300]}")  # account-level problem: stop everything
-            raise ItemFailed(msg[:300])  # anything else (e.g. content refused): drop this item
+    if PROVIDER == "llm":  # the llm package does its own retries (429 / 5xx); account errors stop the run
+        msg = ""
+        for t in range(4):  # an empty reply or a transient error (e.g. "returned an empty response") is retried
+            try:
+                res = _llm_chat_result(LLM_PROVIDER, messages, temperature=temperature, max_tokens=max_tokens)
+                if (res.content or "").strip():
+                    break
+                msg = "empty response"
+            except Exception as e:  # noqa: BLE001  (the package's ProviderError or a transport error)
+                msg = str(e)
+                if re.search(r"401|403|unauthori|forbidden|quota|insufficient|billing|api[_ ]?key", msg, re.I):
+                    raise Abort(f"llm package: {msg[:300]}")  # account-level problem: stop everything
+            time.sleep(2 ** (t + 1))
+        else:
+            raise ItemFailed(msg[:300])  # still failing (e.g. content refused, empty): drop this item; not cached
         txt = res.content or ""
         u = res.usage
         it, ot = (u.input_tokens, u.output_tokens) if u is not None else (0, 0)

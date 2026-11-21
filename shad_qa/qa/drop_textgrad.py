@@ -102,17 +102,23 @@ if __name__ == "__main__":
                         "reference? Be concise and specific.", requires_grad=False, role_description="evaluation instruction"),
             role_descriptions=["passage and question", "reference answer", "model response"], engine=loss_engine)
         gem.SALT.v = f"tg{step}" if ARM == "tg+edit" else f"{ARM}{step}"
-        optim.zero_grad(); losses = []
-        for r in rng.sample(FR, 3):
-            x = tg.Variable(user_msg(r, H["block"]), requires_grad=False, role_description="passage and question")
-            y = tg.Variable(r["gold_text"], requires_grad=False, role_description="reference answer")
-            losses.append(eval_fn([x, y, model(x)]))
-        tg.sum(losses).backward()
-        sp.gradients = sorted(sp.gradients, key=lambda g: g.value)  # textgrad keeps them in a set (order varies by run)
-        optim.step()
+        optim.zero_grad(); losses = []; batch = rng.sample(FR, 3)
+        try:
+            for r in batch:
+                x = tg.Variable(user_msg(r, H["block"]), requires_grad=False, role_description="passage and question")
+                y = tg.Variable(r["gold_text"], requires_grad=False, role_description="reference answer")
+                losses.append(eval_fn([x, y, model(x)]))
+            tg.sum(losses).backward()
+            sp.gradients = sorted(sp.gradients, key=lambda g: g.value)  # textgrad keeps them in a set (order varies by run)
+            optim.step()
+            cand = sp.value
+        except gem.Abort:
+            raise
+        except Exception as e:  # noqa: BLE001  (a failed call inside TextGrad: this step proposes nothing, i.e. a revert)
+            print(f"[{ARM}] step {step}: TextGrad call failed ({str(e)[:200]}); step counted as revert", flush=True)
+            cand = H["sys"]
         gem.SALT.v = ""
-        cand = sp.value
-        v = run(cand, H["block"], VR, "val").correct.mean(); kept = v >= cur
+        v = run(cand, H["block"], VR, "val").correct.mean(); kept = v >= cur and cand != H["sys"]
         if kept:
             H["sys"], cur = cand, v
         rec = dict(step=step, tg_val=100 * v, tg_kept=bool(kept))
