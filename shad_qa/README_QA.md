@@ -52,6 +52,7 @@ bash run_qa_llm.sh drop hotpot                             # a subset
   error and stops before anything else runs.
 - **Concurrency.** Up to 2 processes run per dataset at the same time, each with `WORKERS` threads. Three datasets
   with `WORKERS=16` means up to about 96 requests in flight. If your endpoint rate-limits, lower `WORKERS`.
+- **Paths with spaces** (e.g. a OneDrive folder) are fine.
 - **Resuming.** Every call at temperature 0 and every TextGrad call is cached in `$GEM_OUT/cache.sqlite`. Every
   finished answer set is saved as a CSV, and TextGrad's state is saved after every step. After an interruption, rerun
   the same command and it continues where it stopped; finished work costs nothing.
@@ -63,6 +64,8 @@ bash run_qa_llm.sh drop hotpot                             # a subset
   | `<ds>_textgrad_x_shad.log` | the same for the alternating arm, plus every ShAD candidate with its val EM on steps 3, 6, 9 and 12 |
   | `<ds>_shad_edit.log` | the edit-feature table, the n-gram conditions, every candidate rule with its val EM, the test result |
   | `<ds>_errsum.log` | every error-summary rule with its val EM, the test result, the edit rule vs the error-summary rule |
+  | `<ds>_shad_dims.log`, `_shad_dims_1rule.log`, `_shad_dims_stacked.log` | experiment 3, fixed dimensions: ratings, decoder, cost table, rules; then the 1-rule and the stacked arm |
+  | `<ds>_shad_learned_dims.log`, `_shad_learned_dims_stacked.log` | experiment 3, learned dimensions: proposed dimensions, selection, shared axes, rules; then the stacked arm |
   | `final_report.txt` | the final table (see section 7) |
 
   Example: `tail -f results/llm_<label>/logs/qa/musique_textgrad.log`. `python qa/qa_report.py` prints the table at
