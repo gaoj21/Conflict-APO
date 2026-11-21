@@ -80,7 +80,7 @@ def run(sysp, block, R, tag):
 
 if __name__ == "__main__":
     TRp = S.sample("train", D.NFIT + D.NVAL + NSHAD)  # seed-0 permutation of the train split
-    FR, VR, FS = TRp[:D.NFIT], TRp[D.NFIT:D.NFIT + D.NVAL], TRp[D.NFIT + D.NVAL:]; TE = S.sample("test", D.NTE)
+    FR, VR, FS = TRp[:D.NFIT], S.val_rows(TRp, D.NFIT, D.NVAL, D.NTE), TRp[D.NFIT + D.NVAL:]; TE = S.sample("test", D.NTE)
     if ARM == "tg+shad":
         Cq = np.load(f"{RD.OUT}/q_codes.npy")[:NSHAD]; qnames = json.load(open(f"{RD.OUT}/q_names.json"))
 

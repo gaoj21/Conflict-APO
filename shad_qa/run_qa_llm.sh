@@ -7,6 +7,7 @@
 set -u
 cd "$(dirname "$0")"
 export GEM_PROVIDER=llm
+export QA_VAL=${QA_VAL:-dev}   # val from the dev split, disjoint from test (QA_VAL=train: the earlier design)
 PY=${PY:-python}
 DS=${*:-"drop musique hotpot"}
 W=${WORKERS:-16}

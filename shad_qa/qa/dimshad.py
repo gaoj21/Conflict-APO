@@ -24,7 +24,7 @@ import gem  # noqa: E402
 
 DS = os.environ.get("QA_DS", "drop")
 W = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 32
-BASE = f"{gem.OUT}_qa/{DS}/shadqa" + ("_official" if DS == "drop" else ""); OUT = f"{BASE}/dimshad"; os.makedirs(OUT, exist_ok=True)
+BASE = f"{gem.OUT}_qa/{DS}/shadqa" + ("_official" if DS == "drop" else "") + ("_devval" if os.environ.get("QA_VAL") == "dev" else ""); OUT = f"{BASE}/dimshad"; os.makedirs(OUT, exist_ok=True)
 gem.TAG.v = f"qa/{DS}/dimshad"
 
 DIMS = {  # name: (what 1 means, what 5 means) -- how the answer is written, each changeable by the answerer
@@ -54,7 +54,8 @@ PHRASE = {  # template phrases for the rules: (lower the dimension, raise it)
     "multiplicity": ("give a single item", "list all the items asked for"),
     "qualification": ("give a bare answer without hedges, ranges or parenthetical additions",
                       "keep the qualifiers that are part of the answer"),
-    "type_fit": ("", "make the answer exactly the kind of thing the question asks for"),
+    "type_fit": ("", "give the kind of thing the question asks for (a person, a place, a date, ...); never reply that it is "
+                     "not mentioned or cannot be determined, give your best answer"),
 }
 
 
@@ -82,6 +83,7 @@ if __name__ == "__main__":
         R = pd.concat([A[["qid", "question", "pred", "gold", "correct"]],
                        pd.DataFrame(ra).add_prefix("A_"), pd.DataFrame(rg).add_prefix("G_")], axis=1)
         R.to_csv(rf, index=False)
+    R["pred"] = R.pred.fillna("").astype(str); R["gold"] = R.gold.fillna("").astype(str)  # empty answers read back as NaN
     K = list(DIMS); R = R.dropna(subset=[f"A_{k}" for k in K] + [f"G_{k}" for k in K]).reset_index(drop=True)
     R["qtype"] = R.G_asks.where(R.G_asks.isin(QTYPES), "other")
     wrong = 1 - R.correct.to_numpy()
@@ -132,5 +134,16 @@ if __name__ == "__main__":
             rules.append(dict(dim=k, side=s, kind="question type", qtype=qt,
                               rule=f"- For questions that ask for a {qt}: in the final answer, {act}. For other questions, write the final answer as before."))
     json.dump(rules, open(f"{OUT}/rules.json", "w"), indent=1)
+    # all deviations ranked by how much error they explain (cost weight x share of answers), as global rules: the
+    # candidates of the round-by-round combination (qa/drop_dimshad_eval.py --combine)
+    ranked = []
+    for (k, s), c in cost.items():
+        act = PHRASE[k][0] if s == "too high" else PHRASE[k][1]
+        share = float((DEV[k] > .5).mean() if s == "too high" else (DEV[k] < -.5).mean())
+        if act and c > 0 and share > 0:
+            ranked.append(dict(dim=k, side=s, weight=float(c), share=share, score=float(c) * share, rule=f"- In the final answer, {act}."))
+    ranked.sort(key=lambda r: -r["score"])
+    json.dump(ranked, open(f"{OUT}/ranked.json", "w"), indent=1)
+    print("\nranked global rules (cost weight x share):\n" + "\n".join(f"  {r['score']:.3f}  [{r['dim']} {r['side']}] {r['rule']}" for r in ranked))
     print("\ntranslated rules:\n" + "\n".join(f"  [{r['dim']} {r['side']}, {r['kind']}] {r['rule']}" for r in rules))
     print(f"done, spent ${gem.spent()[0]:.2f}")

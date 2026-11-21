@@ -31,7 +31,7 @@ OUT = f"{S.OUT}/editfeat2"; os.makedirs(OUT, exist_ok=True)
 
 if __name__ == "__main__":
     TRp = S.sample("train", D.NFIT + D.NVAL + NPOOL)  # the same seed-0 permutation as qa/drop_textgrad.py
-    VR = TRp[D.NFIT:D.NFIT + D.NVAL]; POOL = TRp[D.NFIT + D.NVAL:]
+    VR = S.val_rows(TRp, D.NFIT, D.NVAL, D.NTE); POOL = TRp[D.NFIT + D.NVAL:]
     TE = S.sample("test", D.NTE)
     H = json.load(open(f"{TG.OUT}/tg.json")); sysp = H["sys"]
     base_v = TG.run(sysp, [], VR, "val").correct.mean(); base_t = TG.run(sysp, [], TE, "test")

@@ -99,14 +99,16 @@ TextGrad (tg, 12 steps)  ──►  test
 | MuSiQue | 2–4-hop questions, 20 Wikipedia paragraphs (answerable only) | SQuAD: lowercase, punctuation and articles removed; aliases accepted | `dgslibisey/MuSiQue` |
 | HotpotQA | 2-hop questions, distractor setting (2 gold + 8 distractor paragraphs) | SQuAD (as the official script) | `hotpotqa/hotpot_qa` |
 
-Every split is a fixed seed-0 permutation (stored in `data/qa/<ds>_{train,test}.jsonl.gz`):
+Every split is a fixed seed-0 permutation (stored in `data/qa/<ds>_{train,test}.jsonl.gz`). The val set is drawn from the
+same split as the test (`QA_VAL=dev`, the default of `run_qa_llm.sh`): with val from the train split, rules chosen on
+val gained on fresh train questions but not on the dev split. `QA_VAL=train` gives the earlier design.
 
 | split | size | from | used for |
 |---|---|---|---|
 | fit | 600 | train, positions 0–599 | TextGrad batches (3 questions per step) |
-| val | 500 | train, positions 600–1099 | every keep / revert decision and every choice of rule |
+| val | 500 | official dev / validation set, positions 1000–1499 (disjoint from test) | every keep / revert decision and every choice of rule |
 | pool | 1000 | train, positions 1100–2099 | the answers ShAD and the error summary learn from |
-| test | 1000 | official dev / validation set | the final numbers only; never used for any choice |
+| test | 1000 | official dev / validation set, positions 0–999 | the final numbers only; never used for any choice |
 
 **Metric.** Exact match (EM, x100) of the last `Answer:` line after the dataset's normalization. A reply without an
 `Answer:` line is wrong. F1 is also saved.

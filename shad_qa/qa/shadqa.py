@@ -30,7 +30,9 @@ ap.add_argument("--nte", type=int, default=400); ap.add_argument("--k", type=int
 ap.add_argument("--workers", type=int, default=32)
 ap.add_argument("--probes-only", action="store_true", help="stop after the probes (later rounds use them)")
 a = ap.parse_args()
-OUT = f"{gem.OUT}_qa/{a.ds}/shadqa" + ("_official" if a.ds == "drop" else "")  # DROP: official multi-span scoring
+VAL_FROM = os.environ.get("QA_VAL", "train")  # "dev": the val set comes from the dev split (disjoint from test)
+OUT = (f"{gem.OUT}_qa/{a.ds}/shadqa" + ("_official" if a.ds == "drop" else "")  # DROP: official multi-span scoring
+       + ("_devval" if VAL_FROM == "dev" else ""))
 os.makedirs(OUT, exist_ok=True)
 gem.TAG.v = f"qa/{a.ds}/shadqa"
 BASE = "Think step by step."
@@ -156,7 +158,7 @@ else:
         return int(any(snorm(p) == snorm(g) for g in r["golds"])), max(sf1(p, g) for g in r["golds"]), p
 
 
-KEEP = dict(train=4100, test=1000)  # rows kept in data/qa/: enough for every pool of the QA experiments
+KEEP = dict(train=4100, test=1500)  # rows kept in data/qa/: enough for every pool of the QA experiments
 
 
 def sample(split, n):
@@ -177,6 +179,13 @@ def sample(split, n):
         with gzip.open(f, "wt") as fh:
             fh.writelines(json.dumps(r) + "\n" for r in R)
     return R[:n]
+
+
+def val_rows(train_rows, nfit, nval, nte):
+    """The val set: train positions nfit..nfit+nval of the train permutation (QA_VAL=train, the earlier runs), or dev
+    positions nte..nte+nval, right after the test questions and disjoint from them (QA_VAL=dev): choices are then made
+    on the same distribution as the test."""
+    return sample("test", nte + nval)[nte:] if VAL_FROM == "dev" else train_rows[nfit:nfit + nval]
 
 
 def call(msgs, mt, temperature=0.0):

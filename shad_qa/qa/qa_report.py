@@ -25,8 +25,14 @@ def bases():
     return found or [f"{ROOT}/results/<none: no results/*_qa folder>"]
 
 
-def out_dir(base, ds):  # the results folder of qa/shadqa.py for this dataset (DROP: official multi-span scoring)
-    return f"{base}_qa/{ds}/shadqa" + ("_official" if ds == "drop" else "")
+def out_dirs(base, ds):
+    """The results folders of qa/shadqa.py for this dataset (DROP: official multi-span scoring): val from the dev split
+    (QA_VAL=dev, suffix _devval) and/or from the train split; without QA_VAL every one that exists."""
+    root = f"{base}_qa/{ds}/shadqa" + ("_official" if ds == "drop" else "")
+    v = os.environ.get("QA_VAL")
+    cands = [root + "_devval"] if v == "dev" else [root] if v == "train" else [root + "_devval", root]
+    found = [c for c in cands if os.path.exists(f"{c}/textgrad")]
+    return found or cands[:1]
 
 
 def log_tail(base, ds, n=8):  # why an arm is missing: the end of its log
@@ -47,8 +53,8 @@ def diff(x, y):
     return f"{100 * d.mean():+5.1f} (SE {100 * se:.1f}){' *' if abs(d.mean()) > 2 * se else '  '}"
 
 
-for base, ds in [(b, d) for b in bases() for d in DSS]:
-    o = out_dir(base, ds); tgd = f"{o}/textgrad"
+for base, ds, o in [(b, d, o) for b in bases() for d in DSS for o in out_dirs(b, d)]:
+    tgd = f"{o}/textgrad"
     print(f"\n== {ds}  ({o})")
     if not os.path.exists(f"{tgd}/tg.json"):
         print(f"   TextGrad has no saved state ({tgd}/tg.json missing)"); log_tail(base, ds); continue
