@@ -10,9 +10,11 @@ export GEM_PROVIDER=llm
 PY=${PY:-python}
 DS=${*:-"drop musique hotpot"}
 W=${WORKERS:-16}
-if ! OUT=$(PREFLIGHT_DS="" $PY scripts/preflight.py); then
+if ! PF=$(PREFLIGHT_DS="" $PY scripts/preflight.py); then
   echo "PREFLIGHT FAILED: fix the error above, then rerun."; exit 1
 fi
+OUT=$(printf '%s\n' "$PF" | tail -n 1)   # the last line only: the llm package may print to stdout too
+if [ ! -d "$OUT" ]; then echo "PREFLIGHT: results folder '$OUT' does not exist (preflight printed: $PF)"; exit 1; fi
 export GEM_OUT=$OUT
 L=$OUT/logs/qa; mkdir -p $L
 

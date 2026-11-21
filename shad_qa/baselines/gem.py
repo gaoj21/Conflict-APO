@@ -36,13 +36,13 @@ elif PROVIDER == "llm":
     from llm import chat_result as _llm_chat_result, ProviderError as _LLMError  # noqa: E402
     LLM_PROVIDER = os.environ.get("GEM_LLM_PROVIDER") or None
     JUDGE = os.environ.get("GEM_MODEL", LLM_PROVIDER or "llm-default")  # a label only (cache key, logs)
-    OUT = os.environ.get("GEM_OUT", f"{ROOT}/results/llm_{JUDGE.replace('/', '_')}")
+    OUT = os.environ.get("GEM_OUT") or f"{ROOT}/results/llm_{JUDGE.replace('/', '_')}"
 elif PROVIDER == "local":
     # GEM_PROVIDER=local: any OpenAI-compatible server (e.g. vLLM) at GEM_BASE_URL serving GEM_MODEL; no key, no cost.
     # GEM_EXTRA_BODY: optional JSON merged into every request, e.g. '{"chat_template_kwargs": {"enable_thinking": false}}'
     JUDGE = os.environ.get("GEM_MODEL", "google/gemma-4-26b-a4b-it")
     BASE_URL = os.environ.get("GEM_BASE_URL", "http://localhost:8000/v1").rstrip("/")
-    OUT = os.environ.get("GEM_OUT", f"{ROOT}/results/gemma_local")
+    OUT = os.environ.get("GEM_OUT") or f"{ROOT}/results/gemma_local"
 else:
     JUDGE = "google/gemma-4-26b-a4b-it"
     OUT = f"{ROOT}/results/gemma"
