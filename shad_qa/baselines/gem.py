@@ -36,6 +36,19 @@ elif PROVIDER == "llm":
     from llm import chat_result as _llm_chat_result, ProviderError as _LLMError  # noqa: E402
     LLM_PROVIDER = os.environ.get("GEM_LLM_PROVIDER") or None
     JUDGE = os.environ.get("GEM_MODEL", LLM_PROVIDER or "llm-default")  # a label only (cache key, logs)
+    # the package call has no timeout of its own: a stuck connection would block a worker (and the run) forever, so each
+    # call runs in its own thread and is abandoned after GEM_TIMEOUT seconds (then retried like any transient error)
+    LLM_TIMEOUT = float(os.environ.get("GEM_TIMEOUT", "180"))
+    from concurrent.futures import TimeoutError as _FutTimeout  # noqa: E402
+    _LLM_POOL = ThreadPoolExecutor(int(os.environ.get("GEM_LLM_THREADS", "128")), thread_name_prefix="llm")
+    _N_CALLS, _N_TIMEOUTS, _T0 = [0], [0], time.time()
+
+    def _heartbeat():  # one progress line a minute on stderr, so a long step is visibly alive (or visibly stuck)
+        while True:
+            time.sleep(60)
+            print(f"  [llm] {_N_CALLS[0]} calls in {(time.time() - _T0) / 60:.0f} min, {_N_TIMEOUTS[0]} timed out",
+                  file=__import__("sys").stderr, flush=True)
+    threading.Thread(target=_heartbeat, daemon=True).start()
     OUT = os.environ.get("GEM_OUT") or f"{ROOT}/results/llm_{JUDGE.replace('/', '_')}"
 elif PROVIDER == "local":
     # GEM_PROVIDER=local: any OpenAI-compatible server (e.g. vLLM) at GEM_BASE_URL serving GEM_MODEL; no key, no cost.
@@ -112,7 +125,13 @@ def chat(messages, model=JUDGE, temperature=0.0, max_tokens=2000, cache=None):
         msg = ""
         for t in range(4):  # an empty reply or a transient error (e.g. "returned an empty response") is retried
             try:
-                res = _llm_chat_result(LLM_PROVIDER, messages, temperature=temperature, max_tokens=max_tokens)
+                fut = _LLM_POOL.submit(_llm_chat_result, LLM_PROVIDER, messages, temperature=temperature, max_tokens=max_tokens)
+                try:
+                    res = fut.result(timeout=LLM_TIMEOUT)
+                except _FutTimeout:
+                    _N_TIMEOUTS[0] += 1
+                    raise RuntimeError(f"no reply after {LLM_TIMEOUT:.0f}s")
+                _N_CALLS[0] += 1
                 if (res.content or "").strip():
                     break
                 msg = "empty response"

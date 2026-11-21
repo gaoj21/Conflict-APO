@@ -1,5 +1,7 @@
 # ShAD on QA through your `llm` package (DROP, MuSiQue, HotpotQA)
 
+Running on a local GPU (vLLM) instead, and the current state of the results: see [HANDOVER_QA.md](HANDOVER_QA.md).
+
 This folder (branch `shad-qa` of Conflict-APO) runs two ShAD experiments on three QA datasets with your own model:
 
 1. **ShAD alternating with TextGrad** (`tg+edit`): ShAD rules are added round by round, every 3 TextGrad steps.

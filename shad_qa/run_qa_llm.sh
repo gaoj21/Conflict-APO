@@ -1,12 +1,13 @@
 #!/bin/bash
-# QA experiments (see README_QA.md) through the project's `llm` package.
-#   bash run_qa_llm.sh [datasets]        default: drop musique hotpot
+# QA experiments (see README_QA.md) through the project's `llm` package, or a local vLLM server:
+#   bash run_qa_llm.sh [datasets]                          default: drop musique hotpot; llm package
+#   GEM_PROVIDER=local bash run_qa_llm.sh musique          local OpenAI-compatible server (see HANDOVER_QA.md)
 # Resumable: rerun the same command after an interruption; finished steps are read back from disk.
 # Datasets run in parallel. Within a dataset: TextGrad first, then (in parallel) TextGrad x ShAD edit, and the two
 # one-step arms on TextGrad's final prompt (ShAD edit rules, then the error-summary control).
 set -u
 cd "$(dirname "$0")"
-export GEM_PROVIDER=llm
+export GEM_PROVIDER=${GEM_PROVIDER:-llm}
 export QA_VAL=${QA_VAL:-dev}   # val from the dev split, disjoint from test (QA_VAL=train: the earlier design)
 PY=${PY:-python}
 DS=${*:-"drop musique hotpot"}
