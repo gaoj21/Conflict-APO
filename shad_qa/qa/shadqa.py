@@ -30,7 +30,8 @@ ap.add_argument("--nte", type=int, default=400); ap.add_argument("--k", type=int
 ap.add_argument("--workers", type=int, default=32)
 ap.add_argument("--probes-only", action="store_true", help="stop after the probes (later rounds use them)")
 a = ap.parse_args()
-OUT = f"{gem.OUT}_qa/{a.ds}/shadqa"; os.makedirs(OUT, exist_ok=True)
+OUT = f"{gem.OUT}_qa/{a.ds}/shadqa" + ("_official" if a.ds == "drop" else "")  # DROP: official multi-span scoring
+os.makedirs(OUT, exist_ok=True)
 gem.TAG.v = f"qa/{a.ds}/shadqa"
 BASE = "Think step by step."
 
@@ -96,12 +97,22 @@ elif a.ds == "drop":
     def make_prompt(r, inst):
         return f"## Passage\n{r['ctx']}\n\n## Question\n{r['question']}\n\n{inst.strip()}\n\nEnd with exactly one line: Answer: <the answer>"
 
+    def items(p):  # a prediction for a multi-span question, split into its spans
+        return [x for x in re.split(r"\s*\|\s*|\s*;\s*|,\s+(?:and\s+)?|\s+and\s+", p) if x.strip()]
+
     def score(txt, r):
+        """Official DROP EM: the gold answers are the original answer and every validated answer (r["answers"], from
+        the official release); a multi-span answer counts only if the prediction has exactly its spans (any order)."""
         m = re.findall(r"Answer\s*[:：]\s*(.+)", (txt or "").replace("**", ""))
         if not m:
             return 0, 0.0, None
         p = m[-1].strip()
-        return int(any(dnorm(p) == dnorm(g) for g in r["golds"])), max(sf1(dnorm(p), dnorm(g)) for g in r["golds"]), p
+        ok, f1 = 0, 0.0
+        for g in r.get("answers") or [[g] for g in r["golds"]]:  # rows read from HuggingFace lack the official answers
+            gs = sorted(dnorm(s) for s in g)
+            ok |= int(dnorm(p) == gs[0]) if len(g) == 1 else int(sorted(dnorm(x) for x in items(p)) == gs)
+            f1 = max(f1, sf1(dnorm(p), dnorm(" ".join(g))))
+        return ok, f1, p
 elif a.ds == "hotpot":
     def rows(split):  # distractor setting: 2 gold + 8 distractor Wikipedia paragraphs; official EM normalization = snorm
         from datasets import load_dataset

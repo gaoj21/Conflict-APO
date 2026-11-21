@@ -95,7 +95,7 @@ TextGrad (tg, 12 steps)  ──►  test
 
 | dataset | content | official answer normalization | source |
 |---|---|---|---|
-| DROP | sports / history passages, numbers, dates, spans | DROP: per token lowercase, numbers as floats, punctuation and articles removed | `ucinlp/drop` |
+| DROP | sports / history passages, numbers, dates, spans | official DROP EM: per token lowercase, numbers as floats, punctuation and articles removed; gold = the original and every validated answer of the official release; a multi-span answer counts only if all its spans are given (any order) | `ucinlp/drop` + official answers |
 | MuSiQue | 2–4-hop questions, 20 Wikipedia paragraphs (answerable only) | SQuAD: lowercase, punctuation and articles removed; aliases accepted | `dgslibisey/MuSiQue` |
 | HotpotQA | 2-hop questions, distractor setting (2 gold + 8 distractor paragraphs) | SQuAD (as the official script) | `hotpotqa/hotpot_qa` |
 

@@ -25,8 +25,8 @@ def bases():
     return found or [f"{ROOT}/results/<none: no results/*_qa folder>"]
 
 
-def out_dir(base, ds):  # the results folder of qa/shadqa.py for this dataset
-    return f"{base}_qa/{ds}/shadqa"
+def out_dir(base, ds):  # the results folder of qa/shadqa.py for this dataset (DROP: official multi-span scoring)
+    return f"{base}_qa/{ds}/shadqa" + ("_official" if ds == "drop" else "")
 
 
 def log_tail(base, ds, n=8):  # why an arm is missing: the end of its log
