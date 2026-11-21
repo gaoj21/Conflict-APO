@@ -1,3 +1,4 @@
 # your own llm package and run outputs stay local
 llm/
 results/
+logs/   # textgrad writes its own run logs here
