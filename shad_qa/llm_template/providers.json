@@ -1,0 +1,65 @@
+{
+  "default": "codex",
+  "providers": {
+    "codex": {
+      "adapter": "codex",
+      "codex_config": {
+        "model_reasoning_effort": "none"
+      },
+      "params": {
+        "timeout": 900
+      },
+      "model": "gpt-5.6-luna"
+    },
+    "gpt": {
+      "type": "openai_compatible",
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-5.6-luna",
+      "api_key_env": "OPENAI_API_KEY",
+      "max_tokens_field": "max_completion_tokens",
+      "params": {
+        "timeout": 300,
+        "reasoning_effort": "none"
+      }
+    },
+    "deepseek": {
+      "type": "litellm",
+      "model": "deepseek/deepseek-v4-flash",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "params": {
+        "timeout": 120
+      },
+      "enabled": false
+    },
+    "or_nano": {
+      "type": "openai_compatible",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-5-nano",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "params": {
+        "timeout": 300,
+        "reasoning": {
+          "effort": "minimal"
+        },
+        "usage": {
+          "include": true
+        }
+      }
+    },
+    "or_luna": {
+      "type": "openai_compatible",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-5.6-luna",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "params": {
+        "timeout": 300,
+        "reasoning": {
+          "effort": "none"
+        },
+        "usage": {
+          "include": true
+        }
+      }
+    }
+  }
+}
