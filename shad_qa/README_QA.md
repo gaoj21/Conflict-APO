@@ -83,6 +83,8 @@ TextGrad (tg, 12 steps)  ──►  test
         │
         └──►  ShAD edit, 1 step on tg's final prompt  ──►  test
                  └──►  error-summary control, 1 step on tg's final prompt  ──►  test       [experiment 2]
+                        └──►  ShAD dims: fixed dimensions, 1 rule and stacked  ──►  test     [experiment 3]
+                               └──►  ShAD learned dims: stacked  ──►  test                   [experiment 3]
 ```
 
 `tg+edit` starts after `tg` has finished, so that it can replay `tg`'s cached TextGrad calls (see 5.3).
@@ -275,6 +277,32 @@ The difference between the arms is only **where the rule comes from**: features 
 template, versus an LLM's reading of the same errors.
 
 ---
+
+## 6b. Experiment 3 — ShAD with evaluation dimensions (`qa/dimshad.py`, `qa/dimlearn.py`)
+
+This is the ShAD of the rating tasks moved to the generator. A judge rates the answer A on several **evaluation
+dimensions**, ShAD decodes them, and the decoder's weights are translated into rules for the answer prompt.
+
+1. **Judge.** The same model rates the pool answer A and the reference GT, each alone with the question and never
+   both together, on K dimensions of how an answer is written (1–5). It does not judge correctness.
+   - `dimshad.py` uses 6 fixed dimensions: verbosity, specificity, granularity, multiplicity, qualification and
+     type fit. The judge also tags the question type.
+   - `dimlearn.py` learns the dimensions instead. The model proposes 24 candidate dimensions from contrasting pairs
+     of the first 300 pool answers; the data then select among them.
+2. **ShAD decoder.** Per dimension k, a ridge regression fits GT_k from all K dimensions of A plus log length.
+   - The weights show which dimensions move together (shared axes).
+   - DEV_k = A_k − decoded GT_k is how A should move on dimension k.
+3. **Which deviations cost.** P(wrong) is regressed on the deviations above and below the decoded reference
+   (logistic).
+   - In `dimlearn.py` this is an L1 logistic regression. Its strength is the sparsest one within one SE of the best
+     5-fold log loss, and deviations are scaled by their mean absolute size.
+   - In `dimlearn.py` the selected deviations are then grouped into shared axes by a non-negative factorization (NMF),
+     whose rank is chosen by 5-fold reconstruction.
+4. **Translation by template (no LLM).** Every costly deviation (for `dimlearn`, every axis) becomes one global rule.
+   Rules are ranked by cost weight × share of answers.
+   - **1 rule** (`drop_dimshad_eval.py`): every rule is tested alone on val and the best goes to test.
+   - **Stacked** (`drop_dimshad_combine.py [--src dimlearn]`): in rank order, each rule is added to the block if val
+     EM does not drop, as in round-by-round APO; the final block goes to test.
 
 ## 7. Final table (`qa/qa_report.py`, no model calls)
 

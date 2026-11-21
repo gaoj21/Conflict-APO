@@ -86,6 +86,8 @@ if __name__ == "__main__":
     R["pred"] = R.pred.fillna("").astype(str); R["gold"] = R.gold.fillna("").astype(str)  # empty answers read back as NaN
     K = list(DIMS); R = R.dropna(subset=[f"A_{k}" for k in K] + [f"G_{k}" for k in K]).reset_index(drop=True)
     R["qtype"] = R.G_asks.where(R.G_asks.isin(QTYPES), "other")
+    if len(R) < 50:
+        print(f"[{DS}] only {len(R)} answer/reference pairs have parsable ratings: stopping (check the judge replies in {rf})"); sys.exit(0)
     wrong = 1 - R.correct.to_numpy()
     print(f"[{DS}] {len(R)} rated answer/reference pairs, wrong {100 * wrong.mean():.1f}%  (spent ${gem.spent()[0]:.2f})")
     print("\nmean rating  A (model) vs GT (reference), and on wrong answers only:")

@@ -23,6 +23,8 @@ if __name__ == "__main__":
     sysp = json.load(open(f"{TG.OUT}/tg.json"))["sys"]
     cur = TG.run(sysp, [], VR, "val").correct.mean(); base_t = TG.run(sysp, [], TE, "test"); block = []
     print(f"start: TextGrad final, val {100 * cur:.1f}", flush=True)
+    if not os.path.exists(f"{OUT}/ranked.json"):
+        print(f"no {OUT}/ranked.json (qa/{SRC}.py found no rules): nothing to add"); sys.exit(0)
     for r in json.load(open(f"{OUT}/ranked.json")):
         v = TG.run(sysp, block + [r["rule"]], VR, "val").correct.mean(); keep = v >= cur
         if keep:

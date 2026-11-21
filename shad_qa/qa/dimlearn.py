@@ -69,11 +69,22 @@ if __name__ == "__main__":
 
     df = f"{OUT}/dims.json"  # 1. candidate dimensions, from the first 300 pool answers only
     if not os.path.exists(df):
-        txt = gem.chat([dict(role="user", content=PROPOSE.format(pairs=pairs(A.head(300)), k=K))], max_tokens=3000)[0]
-        D_ = json.loads(re.findall(r"\[.*\]", txt, re.S)[-1])
-        D_ = [d for d in D_ if re.fullmatch(r"[a-z_]+", str(d.get("name", ""))) and d.get("low") and d.get("high")]
+        D_ = []
+        for t in range(3):  # a reply that is not a JSON list is asked again (new sample)
+            gem.SALT.v = f"propose{t}" if t else ""
+            txt = gem.chat([dict(role="user", content=PROPOSE.format(pairs=pairs(A.head(300)), k=K))], max_tokens=3000, temperature=0.0 if t == 0 else 0.7)[0]
+            try:
+                D_ = json.loads(re.findall(r"\[.*\]", txt or "", re.S)[-1]); break
+            except Exception:  # noqa: BLE001
+                continue
+        gem.SALT.v = ""
+        if not D_:
+            print(f"[{DS}] the model did not propose dimensions as a JSON list: stopping"); sys.exit(0)
+        D_ = [d for d in D_ if re.fullmatch(r"[a-z][a-z0-9_]*", str(d.get("name", ""))) and d.get("low") and d.get("high")]
         json.dump(list({d["name"]: d for d in D_}.values()), open(df, "w"), indent=1)
     DIMS = json.load(open(df)); names = [d["name"] for d in DIMS]
+    if not names:
+        print(f"[{DS}] no usable dimension in {df}: stopping (delete it to propose again)"); sys.exit(0)
     prompt_dims = "\n".join(f"- {d['name']}: 1 = {d['low']}; 5 = {d['high']}" for d in DIMS)
     print(f"[{DS}] {len(DIMS)} candidate dimensions proposed from 300 pool answers:\n" + "\n".join(f"  {d['name']:28s} 1 = {d['low'][:60]} | 5 = {d['high'][:60]}" for d in DIMS), flush=True)
 
@@ -88,7 +99,11 @@ if __name__ == "__main__":
         R.to_csv(rf, index=False)
     R["pred"] = R.pred.fillna("").astype(str); R["gold"] = R.gold.fillna("").astype(str)
     R = R.dropna(subset=[f"A_{k}" for k in names] + [f"G_{k}" for k in names]).reset_index(drop=True)
+    if len(R) < 50:
+        print(f"[{DS}] only {len(R)} answer/reference pairs have parsable ratings: stopping (check the judge replies in {rf})"); sys.exit(0)
     wrong = 1 - R.correct.to_numpy(); n = len(R)
+    if min(wrong.sum(), n - wrong.sum()) < 10:
+        print(f"[{DS}] too few right or wrong answers ({int(n - wrong.sum())} / {int(wrong.sum())}) to learn from: stopping"); sys.exit(0)
     print(f"\n{n} answer/reference pairs rated on all {len(names)} dimensions, wrong {100 * wrong.mean():.1f}%  (spent ${gem.spent()[0]:.2f})", flush=True)
 
     from sklearn.linear_model import RidgeCV, LogisticRegressionCV, LogisticRegression

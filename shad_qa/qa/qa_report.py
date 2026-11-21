@@ -6,6 +6,9 @@ Per dataset, test EM (x100) of
   + error summary     : TextGrad's final prompt + the best of 6 error-summary rules on val (qa/drop_editfeat_ctrl.py)
   + ShAD edit (1 step): TextGrad's final prompt + the best of 6 edit-feature rules on val (qa/drop_editfeat.py)
   TextGrad x ShAD edit: ShAD edit rules added every 3 TextGrad steps (qa/drop_textgrad.py tg+edit)
+  + ShAD dims (1 rule): TextGrad's final prompt + the best of the evaluation-dimension rules on val (qa/dimshad.py)
+  + ShAD dims (stacked): the evaluation-dimension rules added one by one, each kept if val does not drop
+  + ShAD learned dims : the same with dimensions learned from the data (qa/dimlearn.py)
 with the paired difference to TextGrad and to the error-summary arm (bootstrap SE over test questions).
 """
 import glob, hashlib, json, os, sys
@@ -69,15 +72,22 @@ for base, ds, o in [(b, d, o) for b in bases() for d in DSS for o in out_dirs(b,
                 arms[name] = base; rules[name] += "   (no rule beat TextGrad on val: TextGrad's prompt kept)"
             else:
                 arms[name] = answers(tgd, H["sys"], [b["rule"]])
+    for name, f in (("+ ShAD dims (1 rule)", f"{o}/dimshad/best.json"),):
+        if os.path.exists(f):
+            b = json.load(open(f)); rules[name] = b["rule"]
+            arms[name] = answers(tgd, H["sys"], [b["rule"]]) if b["val"] >= b["base_val"] else base
+    for name, f in (("+ ShAD dims (stacked)", f"{o}/dimshad/combined.json"), ("+ ShAD learned dims", f"{o}/dimlearn/combined.json")):
+        if os.path.exists(f):
+            b = json.load(open(f)); arms[name] = answers(tgd, H["sys"], b["block"]); rules[name] = " / ".join(b["block"]) or "(no rule kept)"
     if os.path.exists(f"{tgd}/tg+edit.json"):
         R = json.load(open(f"{tgd}/tg+edit.json")); arms["TextGrad x ShAD edit"] = answers(tgd, R["sys"], R["block"])
         rules["TextGrad x ShAD edit"] = " / ".join(R["block"]) or "(no rule kept)"
     es = arms.get("+ error summary")
-    print(f"   {'arm':22s} {'test EM':>8s}   {'vs TextGrad':18s} {'vs error summary':18s}")
+    print(f"   {'arm':24s} {'test EM':>8s}   {'vs TextGrad':18s} {'vs error summary':18s}")
     for k, v in arms.items():
         if v is None:
-            print(f"   {k:22s} {'running':>8s}"); continue
-        print(f"   {k:22s} {100 * v.mean():8.1f}   {diff(v, base) if k != 'TextGrad' else '':18s} "
+            print(f"   {k:24s} {'running':>8s}"); continue
+        print(f"   {k:24s} {100 * v.mean():8.1f}   {diff(v, base) if k != 'TextGrad' else '':18s} "
               f"{diff(v, es) if es is not None and k not in ('TextGrad', '+ error summary') else '':18s}")
     for k, r in rules.items():
         print(f"   rule [{k}]: {r}")

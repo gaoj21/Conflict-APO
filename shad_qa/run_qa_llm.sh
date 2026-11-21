@@ -27,7 +27,13 @@ one() { d=$1; export QA_DS=$d
   ( $PY qa/drop_editfeat.py --workers $W > $L/${d}_shad_edit.log 2>&1 \
       && echo "[$d] ShAD edit (1 step) done" || echo "[$d] ShAD edit failed, see $L/${d}_shad_edit.log"
     $PY qa/drop_editfeat_ctrl.py --workers $W > $L/${d}_errsum.log 2>&1 \
-      && echo "[$d] error-summary control done" || echo "[$d] error-summary control failed, see $L/${d}_errsum.log" )
+      && echo "[$d] error-summary control done" || echo "[$d] error-summary control failed, see $L/${d}_errsum.log"
+    # ShAD with evaluation dimensions: fixed dimensions (one rule, and rules stacked one by one on val), then
+    # dimensions learned from the data (stacked)
+    { $PY qa/dimshad.py --workers $W && $PY qa/drop_dimshad_eval.py --workers $W && $PY qa/drop_dimshad_combine.py --workers $W; } > $L/${d}_shad_dims.log 2>&1 \
+      && echo "[$d] ShAD dimensions done" || echo "[$d] ShAD dimensions failed, see $L/${d}_shad_dims.log"
+    { $PY qa/dimlearn.py --workers $W && $PY qa/drop_dimshad_combine.py --src dimlearn --workers $W; } > $L/${d}_shad_learned_dims.log 2>&1 \
+      && echo "[$d] ShAD learned dimensions done" || echo "[$d] ShAD learned dimensions failed, see $L/${d}_shad_learned_dims.log" )
   wait; }
 
 echo "results: $OUT  logs: $L   (progress: tail -f $L/<dataset>_textgrad.log)"
