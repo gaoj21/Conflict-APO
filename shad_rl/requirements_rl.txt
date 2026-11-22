@@ -1,0 +1,9 @@
+# tested (CPU smoke test) with these versions; on the GPU machine install a CUDA build of torch first
+trl==1.18.2
+transformers==5.24.0
+datasets
+accelerate
+numpy
+pandas
+requests
+# optional: vllm  (judge server; and --vllm for faster generation during training)
